@@ -339,7 +339,7 @@ ChatGPT OAuth 令牌调用 Codex 同款的内部用量端点，把 Plus/Pro 套�
 | `openai-billing` | $余额 | 聚合站 `dashboard/billing` 两接口 |
 | `zhipu-quota` | 文本 | `{ code: 200, data: { limits: [{ remaining, number }] } }`（无 `remaining` 的条目回退显示 `percentage`） |
 | `opencode-usage` | 用量% | `{ usage: { rolling|weekly|monthly: { percent, resetsAt } } }` |
-| `zai-coding-quota` | 用量% | `{ code: 200, data: { limits: [{ type: TOKENS_LIMIT \| TIME_LIMIT \| CREDIT_LIMIT, unit, number, percentage, currentValue, usage, remaining, nextResetTime }] } }` —— 语义映射（glm-plan-usage2，issue #2）：TOKENS_LIMIT `unit=3` → 5h 窗口、`unit=6` → 周、TIME_LIMIT → MCP 月度车道；未知 unit 回退按 `nextResetTime` 排序；各窗口百分比优先取 `percentage` 字段。积分/资源包套餐（issue #7）返回的是 CREDIT_LIMIT 行而非 token 窗口：按 `nextResetTime` 顺序映射到 滚动/周 泳道，悬停标题以 `[CREDIT_LIMIT left 剩余/包数]` 标注 |
+| `zai-coding-quota` | 用量% | `{ code: 200, data: { limits: [{ type: TOKENS_LIMIT \| TIME_LIMIT \| CREDIT_LIMIT, unit, number, percentage, currentValue, usage, remaining, nextResetTime }] } }` —— 语义映射（glm-plan-usage2，issue #2）：TOKENS_LIMIT `unit=3` → 5h 窗口、`unit=6` → 周、TIME_LIMIT → MCP 月度车道；未知 unit 回退按 `nextResetTime` 排序；各窗口百分比优先取 `percentage` 字段。积分套餐（issue #7）返回的 CREDIT_LIMIT 行带有同一套 `unit`/`number` 声明，因此两类行共用一次 unit 匹配（`unit=3` → 5h 积分窗口，如 2000 积分；`unit=6` → 周池，如 10000 积分），任一类行都可补上另一类留空的泳道；只有未声明 unit 的行才回退 `nextResetTime` 顺序。积分泳道在悬停标题中标注为 `[CREDIT_LIMIT u3n5 left 剩余/总量]`，缺声明时显示 `no unit` |
 | `kimi-coding-usage` | 用量% | `{ usage: { limit, used, remaining, resetTime }, limits: [{ window: { duration, timeUnit }, detail: { limit, used, remaining, resetTime } }] }` —— 5h = `duration=300` 的窗口、周 = `duration=10080`（缺失时回退顶层 usage）；used = limit − remaining |
 | `volcengine-agent-usage` | 用量% | 不走 `adaptRow`：`fetchRow` 内部以 AK/SK HMAC-SHA256 签名调用火山引擎 OpenAPI `GetAFPUsage`，解析 `Result.AFPFiveHour/AFPWeekly/AFPMonthly`（Agent Plan 的 5h/周/月，AFPDaily 按控制台惯例跳过） |
 | `volcengine-coding-usage` | 用量% | 不走 `adaptRow`：`fetchRow` 内部以 AK/SK HMAC-SHA256 签名调用火山引擎 OpenAPI `GetCodingPlanUsage`，解析 `Result.QuotaUsage[].Level ∈ {session,weekly,monthly}`（Coding Plan 的会话/周/月，仅百分比）。与 Agent 行相互独立、互不回落 |
@@ -499,6 +499,14 @@ manifest（浏览器侧自动进入 `__DSH_BOOT__` 模块图，`immediately: tru
 
 ## 更新日志
 
+- **v0.9.2-rc.4** —— 修复 GLM Coding Plan 积分套餐的 5h/周泳道对调（issue #7）：
+  `CREDIT_LIMIT` 行与 `TOKENS_LIMIT` 行现在共用同一套 `unit`/`number` 窗口声明
+  （`unit=3` → 5h 积分窗口，`unit=6` → 周池），不再只按 `nextResetTime` 顺序落位——
+  周池先于 5h 窗口重置时，旧逻辑必然把两条泳道接反。两类行还可互相补上对方留空的
+  泳道（此前只返回单条 `TOKENS_LIMIT` 时，`CREDIT_LIMIT` 行会被整体丢弃、5h 行消失）。
+  未声明 `unit` 的行仍回退重置顺序，悬停标题会写明窗口声明与额度
+  （`[CREDIT_LIMIT u3n5 left 1900/2000]`，缺声明时为 `no unit`）。V1（仅 5h）、
+  V2（5h/周/MCP 月）等既有形态行为不变。
 - **v0.9.2-rc.3** —— 修复代理引擎导致的宿主崩溃：CONNECT 隧道请求没有挂 `error`
   监听，代理不可达（`ECONNREFUSED 127.0.0.1:7890`，即代理没开）时会以 Node 的
   `Emitted 'error' event on ClientRequest instance` 直接让 `dsh web` 退出。现在每个

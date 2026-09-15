@@ -435,7 +435,7 @@ recover.
 | `openai-billing` | $ balance | aggregator `dashboard/billing` endpoints |
 | `zhipu-quota` | text | `{ code: 200, data: { limits: [{ remaining, number }] } }` (limits without `remaining` fall back to `percentage`) |
 | `opencode-usage` | usage % | `{ usage: { rolling|weekly|monthly: { percent, resetsAt } } }` |
-| `zai-coding-quota` | usage % | `{ code: 200, data: { limits: [{ type: TOKENS_LIMIT \| TIME_LIMIT \| CREDIT_LIMIT, unit, number, percentage, currentValue, usage, remaining, nextResetTime }] } }` — semantic mapping (glm-plan-usage2, issue #2): TOKENS_LIMIT `unit=3` → 5h window, `unit=6` → weekly, TIME_LIMIT → MCP monthly lane; unknown units fall back to `nextResetTime` ordering; every window prefers the `percentage` field. Credit/resource-package plans (issue #7) return CREDIT_LIMIT rows instead of token windows: they map onto rolling/weekly by `nextResetTime` order, and the hover title tags them `[CREDIT_LIMIT left remaining/number]` |
+| `zai-coding-quota` | usage % | `{ code: 200, data: { limits: [{ type: TOKENS_LIMIT \| TIME_LIMIT \| CREDIT_LIMIT, unit, number, percentage, currentValue, usage, remaining, nextResetTime }] } }` — semantic mapping (glm-plan-usage2, issue #2): TOKENS_LIMIT `unit=3` → 5h window, `unit=6` → weekly, TIME_LIMIT → MCP monthly lane; unknown units fall back to `nextResetTime` ordering; every window prefers the `percentage` field. Credit-package plans (issue #7) answer with CREDIT_LIMIT rows that carry the same `unit`/`number` declaration, so both row kinds share one unit match (`unit=3` → the 5h credit window, e.g. 2000 credits; `unit=6` → the weekly pool, e.g. 10000 credits) and either kind may fill a lane the other left empty; only rows that declare no unit fall back to `nextResetTime` ordering. Credit lanes are tagged in the hover title as `[CREDIT_LIMIT u3n5 left remaining/usage]`, or `no unit` when the declaration is absent |
 | `kimi-coding-usage` | usage % | `{ usage: { limit, used, remaining, resetTime }, limits: [{ window: { duration, timeUnit }, detail: { limit, used, remaining, resetTime } }] }` — 5h = the `duration=300` window, weekly = `duration=10080` (fallback: top-level usage); used = limit − remaining |
 | `volcengine-agent-usage` | usage % | Dispatched inline in `fetchRow` (not through `adaptRow`): signs and calls the Volcengine Ark OpenAPI `GetAFPUsage`, parsing `Result.AFPFiveHour / AFPWeekly / AFPMonthly` (Agent Plan 5h/weekly/monthly; AFPDaily skipped per the console). |
 | `volcengine-coding-usage` | usage % | Dispatched inline in `fetchRow` (not through `adaptRow`): signs and calls the Volcengine Ark OpenAPI `GetCodingPlanUsage`, parsing `Result.QuotaUsage[].Level ∈ {session,weekly,monthly}` (Coding Plan session/weekly/monthly, percentages only). Independent from the Agent row — no fallback between them. |
@@ -617,6 +617,17 @@ This plugin builds on community work — thanks to:
 
 ## Changelog
 
+- **v0.9.2-rc.4** — Fixes the swapped GLM Coding Plan 5h/weekly lanes on credit
+  packages (issue #7): `CREDIT_LIMIT` rows now share the `TOKENS_LIMIT` window
+  declaration (`unit=3` → the 5h credit window, `unit=6` → the weekly pool)
+  instead of being placed by `nextResetTime` order alone — the weekly pool
+  resetting before the 5h window inverted the two lanes every time. Either row
+  kind can now also fill a lane its sibling left empty (a lone `TOKENS_LIMIT`
+  row used to discard the `CREDIT_LIMIT` row and lose the 5h lane entirely).
+  Rows that declare no unit keep the reset-order fallback, and the hover title
+  spells out the declaration and quota (`[CREDIT_LIMIT u3n5 left 1900/2000]`,
+  `no unit` when absent). Existing V1 (5h-only) and V2 (5h/weekly/MCP) shapes
+  are unchanged.
 - **v0.9.2-rc.3** — Fixes a host crash in the proxy engine: the CONNECT tunnel
   request had no `error` listener, so an unreachable proxy
   (`ECONNREFUSED 127.0.0.1:7890` — proxy not running) surfaced as Node's

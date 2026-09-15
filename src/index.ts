@@ -1001,10 +1001,21 @@ const FORMATS = {
 		const limits = Array.isArray(body?.data?.limits) ? body.data.limits : [];
 		if (limits.length === 0) throw new Error('data.limits is empty');
 		// Semantic window mapping, cross-checked against the official console
-		// (issue #2) and glm-plan-usage2: TOKENS_LIMIT unit=3 is the 5h window,
-		// unit=6 the weekly window, TIME_LIMIT the MCP monthly lane. The former
-		// size heuristic (sort by unit×number, smallest=5h) swaps 5h/weekly on
-		// plans that return both TOKENS_LIMIT rows.
+		// (issue #2), glm-plan-usage2 and CodexBar's z.ai fixtures: `unit` is a
+		// window time-unit code, so unit=3 is the 5h window, unit=6 the weekly
+		// window and TIME_LIMIT the MCP monthly lane. The former size heuristic
+		// (sort by unit×number, smallest=5h) swaps 5h/weekly on plans that
+		// return both rows.
+		//
+		// Credit-package plans (issue #7) answer with CREDIT_LIMIT rows that
+		// carry the very same unit/number vocabulary — unit=3/number=5 is the 5h
+		// credit window (e.g. 2000 credits), unit=6/number=1 the weekly pool
+		// (e.g. 10000 credits); verified against CodexBar's zai credit fixture.
+		// Those rows used to be placed by nextResetTime order alone, which
+		// inverts the two lanes whenever the weekly pool happens to reset before
+		// the 5h window does (the "GLM 5h/weekly swapped" report). Token and
+		// credit rows therefore share one unit match, and either kind may fill
+		// the lane its sibling left empty.
 		const pct = (l) => {
 			const n = Number(l?.percentage);
 			return Number.isFinite(n) ? Math.min(100, Math.max(0, Math.round(n))) : null;
@@ -1019,28 +1030,21 @@ const FORMATS = {
 		};
 		const resets = (l) => (Number.isFinite(Number(l?.nextResetTime)) ? new Date(Number(l.nextResetTime)).toISOString() : undefined);
 		const tokens = limits.filter((l) => l.type === 'TOKENS_LIMIT');
+		const credits = limits.filter((l) => l.type === 'CREDIT_LIMIT');
 		const time = limits.find((l) => l.type === 'TIME_LIMIT');
-		let rolling = tokens.find((l) => Number(l.unit) === 3);
-		let weekly = tokens.find((l) => Number(l.unit) === 6);
-		if (!rolling && !weekly && tokens.length > 0) {
+		// Token rows win when both kinds declare the same unit; a credit row only
+		// steps in for a lane no token row claimed.
+		const byUnit = (unit) => tokens.find((l) => Number(l.unit) === unit) ?? credits.find((l) => Number(l.unit) === unit);
+		let rolling = byUnit(3);
+		let weekly = byUnit(6);
+		if (!rolling && !weekly) {
 			// Unknown unit codes: the 5h window always resets before the weekly
-			// one, so order by nextResetTime instead of guessing by size.
-			const sorted = [...tokens].sort((a, b) => Number(a.nextResetTime ?? Infinity) - Number(b.nextResetTime ?? Infinity));
+			// one, so order by nextResetTime instead of guessing by size. Token
+			// rows win over credit rows when both kinds are present.
+			const pool = tokens.length > 0 ? tokens : credits;
+			const sorted = [...pool].sort((a, b) => Number(a.nextResetTime ?? Infinity) - Number(b.nextResetTime ?? Infinity));
 			rolling = sorted[0];
 			weekly = sorted.length > 1 ? sorted[sorted.length - 1] : undefined;
-		}
-		if (!rolling && !weekly && tokens.length === 0) {
-			// Credit/resource-package plans (issue #7): the same endpoint answers
-			// with CREDIT_LIMIT rows — a short (daily) pool plus a weekly one,
-			// each carrying a ready-made percentage — instead of token windows.
-			// Map them onto the rolling/weekly lanes by reset order (the shorter
-			// pool always resets first); token/MCP rows win whenever present.
-			const credits = limits.filter((l) => l.type === 'CREDIT_LIMIT');
-			if (credits.length > 0) {
-				const sorted = [...credits].sort((a, b) => Number(a.nextResetTime ?? Infinity) - Number(b.nextResetTime ?? Infinity));
-				rolling = sorted[0];
-				weekly = sorted.length > 1 ? sorted[sorted.length - 1] : undefined;
-			}
 		}
 		const mkWin = (l) => {
 			if (!l) return undefined;
@@ -1053,16 +1057,21 @@ const FORMATS = {
 		if (time) windows.monthly = mkWin(time);
 		if (Object.keys(windows).length === 0) throw new Error('no TOKENS_LIMIT / TIME_LIMIT / CREDIT_LIMIT entries');
 		const plan = body?.data?.planName ?? body?.data?.plan ?? body?.data?.plan_type ?? body?.data?.packageName ?? body?.data?.level;
-		// Credit rows carry remaining/package counts the token rows lack; tag
-		// credit-sourced lanes in the hover title so a daily-reset credit pool
-		// is not mistaken for a 5h token window (issue #7).
+		// Credit rows carry the raw window declaration (unit/number) plus the
+		// credit counts token rows lack; tag credit-sourced lanes in the hover
+		// title so a credit pool is not mistaken for a token window (issue #7),
+		// and so a response that omits `unit` — the one case still placed by
+		// nextResetTime order — is visible on hover instead of silent.
 		const laneTitle = (label: string, l: any, win: any) => {
 			if (!win) return null;
 			if (l?.type === 'CREDIT_LIMIT') {
 				const rem = Number(l?.remaining);
+				const total = Number(l?.usage);
 				const num = Number(l?.number);
-				const left = Number.isFinite(rem) ? ` left ${rem}${Number.isFinite(num) ? `/${num}` : ''}` : '';
-				return `${label} [CREDIT_LIMIT${left}]: ${win.percent}%`;
+				const quota = Number.isFinite(total) ? total : num;
+				const left = Number.isFinite(rem) ? ` left ${rem}${Number.isFinite(quota) ? `/${quota}` : ''}` : '';
+				const winTag = Number.isFinite(Number(l?.unit)) ? ` u${Number(l.unit)}n${l?.number}` : ' no unit';
+				return `${label} [CREDIT_LIMIT${winTag}${left}]: ${win.percent}%`;
 			}
 			return `${label} tokens: ${win.percent}%`;
 		};

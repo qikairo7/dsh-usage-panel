@@ -876,11 +876,11 @@ check('A: zai unknown units -> nearer reset becomes rolling', (() => {
 })());
 // ---------- A2e2: credit-package plans (issue #7, zai) ----------
 // Some GLM subscriptions answer the same endpoint with CREDIT_LIMIT rows
-// (a short daily pool + a weekly pool, each carrying a ready-made
+// (a 5h credit window + a weekly pool, each carrying a ready-made
 // percentage) instead of TOKENS_LIMIT/TIME_LIMIT windows — the adapter
 // used to reject those payloads with "no TOKENS_LIMIT / TIME_LIMIT
-// entries" and the row died. Map them onto rolling/weekly by reset order
-// and surface the raw remaining/package counts in the hover title.
+// entries" and the row died. Rows without a `unit` declaration can only be
+// placed by reset order; rows that declare one are placed by unit (A2e3).
 let q5, q6, q7;
 globalThis.fetch = async (url) => {
 	const s = String(url);
@@ -937,6 +937,69 @@ try { q7 = await handler('fetch-all', null, undefined); } finally { globalThis.f
 check('A: zai single credit row -> rolling only', (() => {
 	const w = q7.value.rows.find((r) => r.id === 'zai-coding-cn')?.view?.windows;
 	return w?.rolling?.percent === 22 && w?.weekly === undefined;
+})());
+// ---------- A2e3: credit rows share the token unit vocabulary (issue #7) ----------
+// GLM credit plans keep the token window declaration: unit=3/number=5 is the
+// 5h credit window (e.g. 2000 credits), unit=6/number=1 the weekly pool (e.g.
+// 10000 credits) — cross-checked against CodexBar's zai credit fixture. Putting
+// those rows by nextResetTime alone inverted the two lanes whenever the weekly
+// pool reset before the 5h window did, which is the reporter's "GLM still
+// swaps 5h/week" note of 2026-09-09.
+let q8, q9, q10;
+globalThis.fetch = async (url) => {
+	const s = String(url);
+	if (s.includes('bigmodel') || s.includes('api.z.ai')) {
+		// weekly pool resets first, 5h window later: reset order inverts, the
+		// unit declaration does not.
+		return { ok: true, status: 200, json: async () => ({ code: 200, data: { limits: [
+			{ type: 'CREDIT_LIMIT', unit: 6, number: 1, usage: 10000, currentValue: 9800, remaining: 200, percentage: 98, nextResetTime: 1893456000000 },
+			{ type: 'CREDIT_LIMIT', unit: 3, number: 5, usage: 2000, currentValue: 0, remaining: 2000, percentage: 0, nextResetTime: 1893456060000 }
+		] } }) };
+	}
+	return { ok: false, status: 404, json: async () => ({}) };
+};
+try { q8 = await handler('fetch-all', null, undefined); } finally { globalThis.fetch = realFetch; }
+check('A: zai credit unit=3 keeps the 5h lane when the weekly pool resets first', (() => {
+	const w = q8.value.rows.find((r) => r.id === 'zai-coding-cn')?.view?.windows;
+	return w?.rolling?.percent === 0 && w?.weekly?.percent === 98;
+})());
+check('A: zai credit title exposes the unit declaration and the quota total', (() => {
+	const title = q8.value.rows.find((r) => r.id === 'zai-coding-cn')?.view?.title;
+	return /CREDIT_LIMIT u3n5 left 2000\/2000/.test(title) && /CREDIT_LIMIT u6n1 left 200\/10000/.test(title);
+})());
+globalThis.fetch = async (url) => {
+	const s = String(url);
+	if (s.includes('bigmodel') || s.includes('api.z.ai')) {
+		// a lone token row claims only the weekly lane -> the credit row fills 5h
+		return { ok: true, status: 200, json: async () => ({ code: 200, data: { limits: [
+			{ type: 'TOKENS_LIMIT', unit: 6, number: 1, percentage: 33, nextResetTime: 1894059060000 },
+			{ type: 'CREDIT_LIMIT', unit: 3, number: 5, usage: 2000, currentValue: 1820, remaining: 180, percentage: 91, nextResetTime: 1893456060000 }
+		] } }) };
+	}
+	return { ok: false, status: 404, json: async () => ({}) };
+};
+try { q9 = await handler('fetch-all', null, undefined); } finally { globalThis.fetch = realFetch; }
+check('A: zai credit row fills the lane a lone token row leaves empty', (() => {
+	const w = q9.value.rows.find((r) => r.id === 'zai-coding-cn')?.view?.windows;
+	return w?.rolling?.percent === 91 && w?.weekly?.percent === 33;
+})());
+globalThis.fetch = async (url) => {
+	const s = String(url);
+	if (s.includes('bigmodel') || s.includes('api.z.ai')) {
+		// neither row declares a unit: the adapter must not guess from `number`
+		// (5 vs 1) or quota size — reset order stays the only signal. This pins
+		// the known limitation; every reported live response carried `unit`.
+		return { ok: true, status: 200, json: async () => ({ code: 200, data: { limits: [
+			{ type: 'CREDIT_LIMIT', number: 5, percentage: 0, nextResetTime: 1893456060000 },
+			{ type: 'CREDIT_LIMIT', number: 1, percentage: 98, nextResetTime: 1893456000000 }
+		] } }) };
+	}
+	return { ok: false, status: 404, json: async () => ({}) };
+};
+try { q10 = await handler('fetch-all', null, undefined); } finally { globalThis.fetch = realFetch; }
+check('A: zai unit-less credit rows keep the reset-order fallback', (() => {
+	const w = q10.value.rows.find((r) => r.id === 'zai-coding-cn')?.view?.windows;
+	return w?.rolling?.percent === 98 && w?.weekly?.percent === 0;
 })());
 globalThis.fetch = async (url) => {
 	if (String(url).includes('api.kimi.com')) {
