@@ -443,9 +443,15 @@
 						textSegs.push(t("nextReset", { time: fmtNextReset(t, w.weekly.resetsAt) }));
 					}
 				} else {
-					textSegs = [fmtWin(labels.rolling, rp, w.rolling)];
-					if (wp !== null) textSegs.push(fmtWin(labels.weekly, wp, w.weekly));
-					textSegs.push(fmtWin(labels.monthly, mp, w.monthly));
+					// A window the plan does not carry is omitted entirely
+					// (no "月 —" placeholder); a carried window whose percent
+					// is unknown keeps its em-dash. Segments push only when
+					// the window exists, so the " · " join never leaves a
+					// dangling separator when the last segment is missing.
+					textSegs = [];
+					if (w.rolling) textSegs.push(fmtWin(labels.rolling, rp, w.rolling));
+					if (w.weekly) textSegs.push(fmtWin(labels.weekly, wp, w.weekly));
+					if (w.monthly) textSegs.push(fmtWin(labels.monthly, mp, w.monthly));
 				}
 				var titleLines = [titleLine(labels.rolling, rp, w.rolling)];
 				if (wp !== null) titleLines.push(titleLine(labels.weekly, wp, w.weekly));
@@ -990,7 +996,11 @@
 				var refreshAll = function () {
 					if (refreshing) return Promise.resolve();
 					setRefreshing(true);
-					return (specs ? Promise.resolve() : loadSpecs()).then(load).then(function () {
+					// Specs reload every cycle: the row list is a one-shot probe of
+				// the host credential service, and a client that mounts before
+				// that service is fully warm captures a stale snapshot (new
+				// catalog rows skipped) that would otherwise never heal.
+				return loadSpecs().then(load).then(function () {
 						setRefreshing(false);
 					});
 				};
@@ -1006,9 +1016,16 @@
 
 				React.useEffect(function () {
 					return ctx.interval(function () {
-						if (!document.hidden) load();
+						if (!document.hidden) loadSpecs().then(load);
 					}, effectiveMs);
 				}, [effectiveMs, proxyKey]);
+
+			// Opening the settings panel re-probes the row list too, so the
+			// visibility checkboxes reflect the catalog immediately instead
+			// of waiting for the next refresh interval.
+			React.useEffect(function () {
+				if (settingsOpen) loadSpecs();
+			}, [settingsOpen]);
 
 				React.useEffect(function () {
 					var onVisible = function () {
