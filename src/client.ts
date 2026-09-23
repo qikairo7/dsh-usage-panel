@@ -78,6 +78,11 @@
 				balanceWarn: "余额紧张",
 				rateLimited: "频控中",
 				rateLimitedReset: "频控中 · {time} 重置",
+				peakBadge: "高峰",
+				offPeak50: "空闲·5折",
+				offPeakHalf: "空闲·半价",
+				holidaysTitle: "DeepSeek 节假日表",
+				holidaysHint: "逗号分隔 YYYY-MM-DD（如 2026-10-01,2026-10-02）。DeepSeek 高峰=工作日 9-12/14-18（周末与此表除外）；GLM 高峰=工作日 14-18，不看此表。表为空时只按周末判断——法定节假日请自行录入。",
 				balanceOk: "余额正常",
 				balanceRich: "余额充足",
 				settingsProviders: "显示供应商",
@@ -158,6 +163,11 @@
 				balanceWarn: "Running low",
 				rateLimited: "Rate limited",
 				rateLimitedReset: "Rate limited · resets {time}",
+				peakBadge: "Peak",
+				offPeak50: "Off·50%",
+				offPeakHalf: "Off·half",
+				holidaysTitle: "DeepSeek holidays",
+				holidaysHint: "Comma-separated YYYY-MM-DD (e.g. 2026-10-01,2026-10-02). DeepSeek peak = weekdays 9-12/14-18 minus weekends and this list; GLM peak = weekdays 14-18 regardless. Empty = weekends only — add statutory holidays yourself.",
 				balanceOk: "Healthy",
 				balanceRich: "Plenty",
 				settingsProviders: "Providers",
@@ -263,6 +273,9 @@
 			'#dsh-quota-card .dsh-provider-sub{margin-top:2px;color:var(--dsw-alias-label-secondary,#61666b);font-size:11.5px;line-height:16px}',
 			'#dsh-quota-card .dsh-quota-divider{height:1px;margin:11px 0;background:var(--dsw-alias-border-l1,rgba(0,0,0,0.06))}',
 			'#dsh-quota-card .dsh-usage-values{margin-top:3px;color:var(--dsw-alias-label-secondary,#61666b);font-size:11px;line-height:16px;font-variant-numeric:tabular-nums;letter-spacing:-0.005em}',
+			'#dsh-quota-card .dsh-peak-badge{display:inline-block;margin-left:6px;padding:0 6px;border-radius:999px;font-size:10px;line-height:16px;font-weight:500;vertical-align:1px;letter-spacing:0}',
+			'#dsh-quota-card .dsh-peak-badge.state-peak{background:var(--dsw-alias-color-warning-bg,rgba(180,83,9,.12));color:var(--dsw-alias-color-warning,#b45309)}',
+			'#dsh-quota-card .dsh-peak-badge.state-off{background:var(--dsw-alias-color-success-bg,rgba(21,128,61,.12));color:var(--dsw-alias-color-success,#15803d)}',
 			'#dsh-quota-card .dsh-progress{position:relative;width:100%;height:4.5px;margin-top:7px;overflow:hidden;border-radius:9999px;background:var(--dsw-alias-border-l1,rgba(0,0,0,0.06))}',
 			'#dsh-quota-card .dsh-progress-fill{height:100%;width:0;border-radius:inherit;background:var(--dsw-static-deepseek-500,#4176e6);transition:width 240ms cubic-bezier(0.16,1,0.3,1),background-color 160ms ease}',
 			'#dsh-quota-card .state-warn .dsh-progress-fill{background:var(--dsw-static-amber-500,#f59e0b)}',
@@ -330,7 +343,7 @@
 		var CAPSULE_MODES = { auto: true, rolling: true, weekly: true, max: true };
 
 		function readSettings() {
-			var base = { hidden: {}, refreshMs: null, warn: {}, proxy: {}, capsuleMode: null, position: null };
+			var base = { hidden: {}, refreshMs: null, warn: {}, proxy: {}, capsuleMode: null, position: null, holidays: "" };
 			try {
 				var raw = globalThis.localStorage.getItem(STORAGE_KEY);
 				if (raw === null) return base;
@@ -576,13 +589,55 @@
 			};
 		}
 
+		/**
+		 * Peak/off-peak badge for providers with differential pricing windows.
+		 * GLM coding (zai / zai-coding-cn): peak = Mon-Fri 14:00-18:00 UTC+8;
+		 * off-peak credits bill at 50%. DeepSeek: peak = Mon-Fri 09:00-12:00
+		 * and 14:00-18:00 Beijing time excluding the user-configured holiday
+		 * list (comma-separated YYYY-MM-DD in settings; empty = weekends
+		 * only — no holiday data is fabricated); off-peak price is half.
+		 * GLM's definition ignores the holiday list (the user's spec only
+		 * said weekdays). Recomputed on every render, so the badge follows
+		 * the refresh cycle. Returns null for every other provider.
+		 */
+		function peakStatus(providerId, holidaysRaw) {
+			var kind = null;
+			if (providerId === "zai-coding-cn" || providerId === "zai") kind = "glm";
+			else if (providerId === "deepseek") kind = "ds";
+			if (kind === null) return null;
+			var now = new Date(Date.now() + 8 * 3600e3); // UTC+8 wall clock
+			var pad = function (n) { return (n < 10 ? "0" : "") + n; };
+			var day = now.getUTCDay();
+			var minutes = now.getUTCHours() * 60 + now.getUTCMinutes();
+			var weekday = day >= 1 && day <= 5;
+			var inPeak;
+			if (kind === "glm") {
+				inPeak = weekday && minutes >= 14 * 60 && minutes < 18 * 60;
+			} else {
+				var holidays = String(holidaysRaw || "").split(",").map(function (s) { return s.trim(); }).filter(Boolean);
+				var today = now.getUTCFullYear() + "-" + pad(now.getUTCMonth() + 1) + "-" + pad(now.getUTCDate());
+				var workday = weekday && holidays.indexOf(today) === -1;
+				inPeak = workday && ((minutes >= 9 * 60 && minutes < 12 * 60) || (minutes >= 14 * 60 && minutes < 18 * 60));
+			}
+			return { inPeak: inPeak, kind: kind };
+		}
+
 		function ProviderRow(props) {
 			var spec = props.spec;
 			var view = props.view;
+			var t = props.t;
 			var children = [
 				React.createElement("span", { key: "dot", className: "dsh-status-dot" })
 			];
 			var headChildren = [React.createElement("span", { key: "name", className: "dsh-provider-name" }, spec.label)];
+			var peak = t ? peakStatus(spec.id, props.holidays) : null;
+			if (peak) {
+				var peakText = peak.inPeak ? t("peakBadge") : t(peak.kind === "glm" ? "offPeak50" : "offPeakHalf");
+				headChildren.push(React.createElement("span", {
+					key: "peak",
+					className: "dsh-peak-badge state-" + (peak.inPeak ? "peak" : "off")
+				}, peakText));
+			}
 			if (view.value !== null && view.value !== undefined) {
 				headChildren.push(React.createElement("span", { key: "value", className: "dsh-provider-value" }, view.value));
 			}
@@ -787,6 +842,15 @@
 				onChange(Object.assign({}, settings, { position: null }));
 			};
 
+			var setHolidays = function (text) {
+				onChange(Object.assign({}, settings, { holidays: text }));
+			};
+			var holidaysSection = React.createElement("div", { className: "dsh-setting-section" },
+				React.createElement("div", { className: "dsh-setting-title" }, t("holidaysTitle")),
+				React.createElement("div", { className: "dsh-setting-row dsh-setting-row-interactive", style: { flexDirection: "column", alignItems: "stretch", gap: "4px" } },
+					React.createElement("input", { className: "dsh-setting-input", type: "text", placeholder: "2026-10-01,2026-10-02", value: settings.holidays || "", onChange: function (e) { setHolidays(e.target.value); } }),
+					React.createElement("div", { className: "dsh-setting-hint" }, t("holidaysHint"))));
+
 			var refreshValue = "";
 			if (settings.refreshMs !== null && settings.refreshMs !== undefined) {
 				var match = REFRESH_CHOICES.some(function (choice) { return Number(choice.value) === settings.refreshMs; });
@@ -851,6 +915,7 @@
 				React.createElement("div", { className: "dsh-setting-section" },
 					React.createElement("div", { className: "dsh-setting-title" }, t("settingsProviders")),
 					visibilityRows.length ? React.createElement("div", { className: "dsh-setting-scroll-list" }, visibilityRows) : React.createElement("div", { className: "dsh-setting-hint" }, t("settingsNoProviders"))),
+				holidaysSection,
 				React.createElement("div", { className: "dsh-setting-section" },
 					React.createElement("div", { className: "dsh-setting-title" }, t("settingsInterval")),
 					React.createElement("div", { className: "dsh-setting-row" },
@@ -1178,7 +1243,7 @@
 				} else {
 					for (var k = 0; k < rows.length; k++) {
 						if (k > 0) bodyChildren.push(React.createElement("div", { key: rows[k].id + "-div", className: "dsh-quota-divider" }));
-						bodyChildren.push(React.createElement(ProviderRow, { key: rows[k].id, spec: rows[k], view: views[rows[k].id] }));
+						bodyChildren.push(React.createElement(ProviderRow, { key: rows[k].id, spec: rows[k], view: views[rows[k].id], t: t, holidays: settings.holidays }));
 					}
 					if (fetchedAt !== null) {
 						bodyChildren.push(React.createElement("div", { key: "at", className: "dsh-quota-divider" }));
