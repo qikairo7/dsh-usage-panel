@@ -812,6 +812,75 @@ function parseChatGPTUsage(body: any): { kind: 'usage'; windows: Record<string, 
 }
 
 /**
+ * In-memory cache for Qoder jobToken exchanged from the PAT.
+ * Valid for ~24h; cleared on 401 and retried once.
+ */
+let qoderTokenCache: { pat: string; token: string; expiresAt: number } | null = null;
+
+async function exchangeQoderJobToken(base: string, pat: string, proxyUrl: string | undefined, timeoutMs: number): Promise<{ token: string; expiresAt: number }> {
+	const url = `${base}/api/v1/jobToken/exchange`;
+	const headers = {
+		'content-type': 'application/json',
+		accept: 'application/json',
+		'cosy-version': '1.0.1',
+		'cosy-clienttype': '5'
+	};
+	const res = await getJson(url, headers, proxyUrl, timeoutMs, 'POST', JSON.stringify({ personal_token: pat }));
+	const data = await res.json().catch(() => null);
+	if (!res.ok || !data) {
+		throw new Error(`HTTP ${res.status}: exchange jobToken failed`);
+	}
+	const token = data.token || data.data?.token;
+	if (typeof token !== 'string' || token.length === 0) {
+		throw new Error(`HTTP ${res.status}: jobToken not found in response`);
+	}
+	const ttl = Number(data.expires_in || data.data?.expires_in);
+	const expiresInMs = Number.isFinite(ttl) && ttl > 0 ? ttl : 86400000;
+	const expiresAt = Date.now() + expiresInMs - 5 * 60 * 1000;
+	return { token, expiresAt };
+}
+
+async function queryQoderUsage(base: string, token: string, proxyUrl: string | undefined, timeoutMs: number) {
+	const url = `${base}/api/v2/quota/usage`;
+	const headers = {
+		accept: 'application/json',
+		authorization: `Bearer ${token}`,
+		'cosy-version': '1.0.1',
+		'cosy-clienttype': '5'
+	};
+	return getJson(url, headers, proxyUrl, timeoutMs, 'GET');
+}
+
+async function fetchQoderRow(pat: string, endpoint: string, proxyUrl: string | undefined, timeoutMs: number): Promise<any> {
+	const base = (endpoint || 'https://openapi.qoder.com.cn').replace(/\/+$/, '');
+	let token = '';
+	if (qoderTokenCache && qoderTokenCache.pat === pat && Date.now() < qoderTokenCache.expiresAt) {
+		token = qoderTokenCache.token;
+	} else {
+		const exchanged = await exchangeQoderJobToken(base, pat, proxyUrl, timeoutMs);
+		qoderTokenCache = { pat, token: exchanged.token, expiresAt: exchanged.expiresAt };
+		token = exchanged.token;
+	}
+
+	let upstream = await queryQoderUsage(base, token, proxyUrl, timeoutMs);
+	if (upstream.status === 401) {
+		qoderTokenCache = null;
+		const refreshed = await exchangeQoderJobToken(base, pat, proxyUrl, timeoutMs);
+		qoderTokenCache = { pat, token: refreshed.token, expiresAt: refreshed.expiresAt };
+		upstream = await queryQoderUsage(base, refreshed.token, proxyUrl, timeoutMs);
+	}
+
+	const body = await upstream.json().catch(() => null);
+	if (body === null) {
+		throw new Error(`HTTP ${upstream.status}: non-JSON response`);
+	}
+	if (!upstream.ok) {
+		throw new Error(`HTTP ${upstream.status}`);
+	}
+	return body;
+}
+
+/**
  * Normalized row views an adapter may produce. The browser half renders
  * these generically; upstream response schema details never leave the host.
  * @typedef {object} RowView
@@ -849,7 +918,8 @@ const FORMAT_META = {
 	// (resolveRows/rowSpec) drops empty strings and would otherwise fall
 	// back to a misleading ¥.
 	'antigravity-quota': { kind: 'usage' },
-	'workbuddy-credits': { kind: 'balance', currency: '分' }
+	'workbuddy-credits': { kind: 'balance', currency: '分' },
+	'qoder-quota': { kind: 'balance', currency: '积分' }
 };
 
 /**
@@ -901,7 +971,8 @@ const CATALOG = [
 	{ id: 'antigravity-gemini', label: 'Antigravity Gemini 池', short: 'AG-G', refs: ['DEEPSEEK_API_KEY'], localAuth: 'loopback', endpoint: 'http://127.0.0.1:3080/antigravity/api/quota', format: 'antigravity-quota', windowLabels: { rolling: '5h', weekly: '周' } },
 	{ id: 'antigravity-claude', label: 'Antigravity Claude 池', short: 'AG-C', refs: ['DEEPSEEK_API_KEY'], localAuth: 'loopback', endpoint: 'http://127.0.0.1:3080/antigravity/api/quota', format: 'antigravity-quota', windowLabels: { rolling: '5h', weekly: '周' } },
 	{ id: 'workbuddy-cn', label: 'WorkBuddy 国内积分', short: 'WB-CN', refs: ['DEEPSEEK_API_KEY'], localAuth: 'loopback', endpoint: 'http://127.0.0.1:3080/plugins/dsh-connect-workbuddy/usage?region=cn', format: 'workbuddy-credits' },
-	{ id: 'workbuddy-global', label: 'WorkBuddy 国际积分', short: 'WB-GL', refs: ['DEEPSEEK_API_KEY'], localAuth: 'loopback', endpoint: 'http://127.0.0.1:3080/plugins/dsh-connect-workbuddy/usage?region=global', format: 'workbuddy-credits' }
+	{ id: 'workbuddy-global', label: 'WorkBuddy 国际积分', short: 'WB-GL', refs: ['DEEPSEEK_API_KEY'], localAuth: 'loopback', endpoint: 'http://127.0.0.1:3080/plugins/dsh-connect-workbuddy/usage?region=global', format: 'workbuddy-credits' },
+	{ id: 'qoder', label: 'Qoder', short: 'Qoder', refs: ['QODER_MANAGED_CREDENTIAL'], endpoint: 'https://openapi.qoder.com.cn', format: 'qoder-quota', currency: '积分' }
 ];
 
 /** Keys a `catalog` override may set on an auto-discovered row. */
@@ -1241,6 +1312,29 @@ const FORMATS = {
 	// an OAuth token from ~/.codex/auth.json (with refresh), not ctx.credentials.
 	'chatgpt-subscription': () => {
 		throw new Error('chatgpt-subscription is handled inline by fetchRow');
+	},
+	'qoder-quota': (body) => {
+		const d = body?.data ?? body;
+		const addOn = d?.addOnQuota;
+		const userQ = d?.userQuota;
+		let remaining: number | undefined;
+		if (addOn && Number.isFinite(Number(addOn.remaining)) && Number(addOn.total) > 0) {
+			remaining = Number(addOn.remaining);
+		} else if (userQ && Number.isFinite(Number(userQ.remaining))) {
+			remaining = Number(userQ.remaining);
+		} else if (addOn && Number.isFinite(Number(addOn.remaining))) {
+			remaining = Number(addOn.remaining);
+		}
+		if (remaining === undefined || !Number.isFinite(remaining)) {
+			throw new Error('missing addOnQuota / userQuota remaining');
+		}
+		const titleParts = [
+			d?.userType ? `userType: ${d.userType}` : null,
+			d?.usageType ? `usageType: ${d.usageType}` : null,
+			addOn && addOn.total !== undefined ? `addOn: ${addOn.used ?? 0}/${addOn.total} (rem: ${addOn.remaining})` : null,
+			userQ && userQ.total !== undefined && Number(userQ.total) > 0 ? `userQuota: ${userQ.used ?? 0}/${userQ.total}` : null
+		].filter(Boolean);
+		return { kind: 'balance', amount: remaining, title: titleParts.join('\n') };
 	}
 };
 
@@ -1270,7 +1364,7 @@ export const Config = z.object({
 			z.const('xai-credits'), z.const('openai-billing'), z.const('zhipu-quota'),
 			z.const('opencode-usage'), z.const('zai-coding-quota'), z.const('kimi-coding-usage'),
 			z.const('volcengine-agent-usage'), z.const('volcengine-coding-usage'), z.const('chatgpt-subscription'),
-			z.const('antigravity-quota'), z.const('workbuddy-credits')
+			z.const('antigravity-quota'), z.const('workbuddy-credits'), z.const('qoder-quota')
 		]).default('deepseek-balance'),
 		proxy: z.string(),
 		currency: z.string(),
@@ -1860,6 +1954,12 @@ async function fetchRow(ctx, provider, proxies, clientProxyUrl) {
 		const proxyUrl = clientProxyUrl !== undefined
 			? clientProxyUrl
 			: (provider.proxy !== undefined ? proxies[provider.proxy] : undefined);
+		if (provider.format === 'qoder-quota') {
+			const pat = hit.value;
+			const body = await fetchQoderRow(pat, provider.endpoint, proxyUrl, UPSTREAM_TIMEOUT_MS);
+			const outcome = adaptRow(provider.format, body, provider);
+			return { id: provider.id, ...outcome };
+		}
 		if (provider.format === 'openai-billing') {
 			const base = provider.endpoint.replace(/\/+$/, '');
 			const sub = await getJson(`${base}/v1/dashboard/billing/subscription`, headers, proxyUrl, UPSTREAM_TIMEOUT_MS);
