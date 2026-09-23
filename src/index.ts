@@ -841,7 +841,15 @@ const FORMAT_META = {
 	'kimi-coding-usage': { kind: 'usage' },
 	'volcengine-agent-usage': { kind: 'usage' },
 	'volcengine-coding-usage': { kind: 'usage' },
-	'chatgpt-subscription': { kind: 'usage' }
+	'chatgpt-subscription': { kind: 'usage' },
+	// Local loopback rows: Antigravity quota buckets (dsh-antigravity
+	// plugin status endpoint) and WorkBuddy credit pools (dsh-connect-
+	// workbuddy usage endpoint). Credits are dimensionless points; the
+	// currency slot carries the count unit 分 because the currency chain
+	// (resolveRows/rowSpec) drops empty strings and would otherwise fall
+	// back to a misleading ¥.
+	'antigravity-quota': { kind: 'usage' },
+	'workbuddy-credits': { kind: 'balance', currency: '分' }
 };
 
 /**
@@ -880,7 +888,18 @@ const CATALOG = [
 	// ~/.codex/auth.json (written by `codex login`) and refreshed host-side.
 	// `localAuth: 'codex'` makes resolveRows skip credential probing and always
 	// surface the row (the row errors at fetch time if auth.json is missing).
-	{ id: 'chatgpt', label: 'ChatGPT', localAuth: 'codex', endpoint: CHATGPT_USAGE_URL, format: 'chatgpt-subscription', windowLabels: { rolling: '5h', weekly: '周' } }
+	{ id: 'chatgpt', label: 'ChatGPT', localAuth: 'codex', endpoint: CHATGPT_USAGE_URL, format: 'chatgpt-subscription', windowLabels: { rolling: '5h', weekly: '周' } },
+	// Local loopback rows served by other plugins on this DSH web host.
+	// The endpoints need no real credential — they ignore the Bearer
+	// header — but auto discovery only surfaces rows whose refs resolve,
+	// so `refs` door-knocks on a locally present key. The host half also
+	// fetches without an Origin header, which these endpoints require.
+	// One antigravity format serves both pool rows; its adapter picks the
+	// bucket family (gemini-* / 3p-*) from the provider id.
+	{ id: 'antigravity-gemini', label: 'Antigravity Gemini 池', refs: ['DEEPSEEK_API_KEY'], endpoint: 'http://127.0.0.1:3080/antigravity/api/status', format: 'antigravity-quota', windowLabels: { rolling: '5h', weekly: '周' } },
+	{ id: 'antigravity-claude', label: 'Antigravity Claude 池', refs: ['DEEPSEEK_API_KEY'], endpoint: 'http://127.0.0.1:3080/antigravity/api/status', format: 'antigravity-quota', windowLabels: { rolling: '5h', weekly: '周' } },
+	{ id: 'workbuddy-cn', label: 'WorkBuddy 国内积分', refs: ['DEEPSEEK_API_KEY'], endpoint: 'http://127.0.0.1:3080/plugins/dsh-connect-workbuddy/usage?region=cn', format: 'workbuddy-credits' },
+	{ id: 'workbuddy-global', label: 'WorkBuddy 国际积分', refs: ['DEEPSEEK_API_KEY'], endpoint: 'http://127.0.0.1:3080/plugins/dsh-connect-workbuddy/usage?region=global', format: 'workbuddy-credits' }
 ];
 
 /** Keys a `catalog` override may set on an auto-discovered row. */
@@ -888,8 +907,10 @@ const CATALOG_OVERRIDE_KEYS = ['label', 'endpoint', 'format', 'proxy', 'refs', '
 
 /**
  * Format adapters: upstream JSON → RowView. Each returns a view or throws
- * with a message prefixed by the format id; callers capture per row.
- * @type {Record<string, (body: any) => RowView>}
+ * with a message prefixed by the format id; callers capture per row. The
+ * optional second parameter is the row's provider entry — adapters that
+ * serve several catalog rows (antigravity-quota) branch on provider.id.
+ * @type {Record<string, (body: any, provider?: { id?: string }) => RowView>}
  */
 const FORMATS = {
 	'deepseek-balance': (body) => {
@@ -1140,6 +1161,62 @@ const FORMATS = {
 	'volcengine-coding-usage': () => {
 		throw new Error('volcengine-coding-usage is handled inline by fetchRow');
 	},
+	// Antigravity loopback status (dsh-antigravity plugin). One format
+	// serves two catalog rows: the adapter picks the bucket family from
+	// the provider id (antigravity-gemini -> gemini-5h / gemini-weekly,
+	// antigravity-claude -> 3p-5h / 3p-weekly). Upstream reports REMAINING
+	// percent; RowView windows are USED percent, hence 100 - remaining.
+	// resetTime is already an ISO string.
+	'antigravity-quota': (body, provider) => {
+		if (body?.ok !== true || !body?.value) throw new Error('missing ok/value envelope');
+		if (body.value.authenticated !== true) throw new Error(`not authenticated (login: ${String(body.value.login?.status ?? 'unknown')})`);
+		const quota = body.value.quota;
+		const rows = Array.isArray(quota?.bucketRows) ? quota.bucketRows : [];
+		if (rows.length === 0) throw new Error('quota.bucketRows is empty');
+		const family = provider?.id === 'antigravity-claude' ? '3p' : provider?.id === 'antigravity-gemini' ? 'gemini' : null;
+		if (family === null) throw new Error(`provider id must be antigravity-gemini or antigravity-claude, got ${JSON.stringify(String(provider?.id))}`);
+		const win = (id: string) => {
+			const row = rows.find((r) => r?.id === id);
+			if (!row) return undefined;
+			const remaining = Number(row.remainingPercent);
+			if (!Number.isFinite(remaining)) return undefined;
+			return {
+				percent: Math.min(100, Math.max(0, Math.round(100 - remaining))),
+				resetsAt: typeof row.resetTime === 'string' && row.resetTime ? row.resetTime : undefined
+			};
+		};
+		const rolling = win(`${family}-5h`);
+		const weekly = win(`${family}-weekly`);
+		if (!rolling && !weekly) throw new Error(`no ${family}-5h / ${family}-weekly buckets in quota.bucketRows`);
+		const windows: Record<string, any> = {};
+		if (rolling) windows.rolling = rolling;
+		if (weekly) windows.weekly = weekly;
+		const plan = typeof quota.planLabel === 'string' && quota.planLabel ? quota.planLabel : null;
+		const title = [
+			plan ? `plan: ${plan}` : null,
+			rolling ? `5h: ${rolling.percent}% used${rolling.resetsAt ? ` (reset ${rolling.resetsAt})` : ''}` : null,
+			weekly ? `weekly: ${weekly.percent}% used${weekly.resetsAt ? ` (reset ${weekly.resetsAt})` : ''}` : null
+		].filter(Boolean).join('\n');
+		return { kind: 'usage', windows, title };
+	},
+	// WorkBuddy credit pools (dsh-connect-workbuddy usage endpoint, one row
+	// per region query). credits.total is the remaining point count — the
+	// same semantics as a balance amount.
+	'workbuddy-credits': (body) => {
+		if (body?.status !== 'signed-in') throw new Error(`auth invalid (status: ${JSON.stringify(String(body?.status ?? 'missing'))})`);
+		const amount = Number(body?.credits?.total);
+		if (!Number.isFinite(amount)) throw new Error('missing credits.total');
+		const packages = Array.isArray(body?.credits?.packages) ? body.credits.packages : [];
+		const expiring = Number(body?.credits?.expiringSoon);
+		const nearest = Number(body?.credits?.nearestExpiryMs);
+		const title = [
+			typeof body.accountName === 'string' && body.accountName ? `account: ${body.accountName}` : null,
+			`packages: ${packages.length}`,
+			Number.isFinite(expiring) && expiring > 0 ? `expiring soon: ${expiring}` : null,
+			Number.isFinite(nearest) && nearest > 0 ? `nearest expiry: ${new Date(nearest).toISOString()}` : null
+		].filter(Boolean).join('\n');
+		return { kind: 'balance', amount, title };
+	},
 	// chatgpt-subscription is dispatched inline in fetchRow because it uses
 	// an OAuth token from ~/.codex/auth.json (with refresh), not ctx.credentials.
 	'chatgpt-subscription': () => {
@@ -1171,7 +1248,8 @@ export const Config = z.object({
 			z.const('moonshot-balance'), z.const('minimax-remains'), z.const('stepfun-accounts'),
 			z.const('xai-credits'), z.const('openai-billing'), z.const('zhipu-quota'),
 			z.const('opencode-usage'), z.const('zai-coding-quota'), z.const('kimi-coding-usage'),
-			z.const('volcengine-agent-usage'), z.const('volcengine-coding-usage'), z.const('chatgpt-subscription')
+			z.const('volcengine-agent-usage'), z.const('volcengine-coding-usage'), z.const('chatgpt-subscription'),
+			z.const('antigravity-quota'), z.const('workbuddy-credits')
 		]).default('deepseek-balance'),
 		proxy: z.string(),
 		currency: z.string(),
@@ -1622,10 +1700,10 @@ function parseVolcengineCodingPlan(result: any): { kind: 'usage'; windows: Recor
 }
 
 /** Normalize one upstream body through its format adapter. */
-function adaptRow(format, body) {
+function adaptRow(format, body, provider) {
 	const adapter = FORMATS[format] ?? FORMATS['deepseek-balance'];
 	try {
-		return { view: adapter(body) };
+		return { view: adapter(body, provider) };
 	} catch (error) {
 		return { error: `${format}: ${String((error && error.message) || error)}` };
 	}
@@ -1751,7 +1829,7 @@ async function fetchRow(ctx, provider, proxies, clientProxyUrl) {
 		const upstream = await getJson(provider.endpoint, headers, proxyUrl, UPSTREAM_TIMEOUT_MS);
 		const body = await upstream.json().catch(() => null);
 		if (body === null) return { id: provider.id, error: `HTTP ${upstream.status}: non-JSON response` };
-		const outcome = adaptRow(provider.format, body);
+		const outcome = adaptRow(provider.format, body, provider);
 		if (!upstream.ok && outcome.error === undefined) {
 			return { id: provider.id, error: `HTTP ${upstream.status}`, view: outcome.view };
 		}
