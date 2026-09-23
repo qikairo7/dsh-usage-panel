@@ -892,6 +892,9 @@ async function fetchQoderRow(pat: string, endpoint: string, proxyUrl: string | u
  * @property {'info'} [kind] - plain text row (providers without a balance API)
  * @property {string} [text] - info row content
  * @property {string} [title] - hover text, newlines allowed
+ * @property {boolean} [rateLimited] - whether row hit 429 soft limit
+ * @property {string} [rateLimitResetsAt] - ISO timestamp when rate limit resets
+ * @property {string} [rateLimitModel] - model id that triggered rate limit
  */
 
 /** View kind and currency each adapter's rows render as. */
@@ -914,11 +917,11 @@ const FORMAT_META = {
 	// Local loopback rows: Antigravity quota buckets (dsh-antigravity
 	// plugin status endpoint) and WorkBuddy credit pools (dsh-connect-
 	// workbuddy usage endpoint). Credits are dimensionless points; the
-	// currency slot carries the count unit 分 because the currency chain
+	// currency slot carries the count unit 积分 because the currency chain
 	// (resolveRows/rowSpec) drops empty strings and would otherwise fall
 	// back to a misleading ¥.
 	'antigravity-quota': { kind: 'usage' },
-	'workbuddy-credits': { kind: 'balance', currency: '分' },
+	'workbuddy-credits': { kind: 'balance', currency: '积分' },
 	'qoder-quota': { kind: 'balance', currency: '积分' }
 };
 
@@ -970,8 +973,8 @@ const CATALOG = [
 	// bucket family (gemini-* / 3p-*) from the provider id.
 	{ id: 'antigravity-gemini', label: 'Antigravity Gemini 池', short: 'AG-G', refs: ['DEEPSEEK_API_KEY'], localAuth: 'loopback', endpoint: 'http://127.0.0.1:3080/antigravity/api/quota', format: 'antigravity-quota', windowLabels: { rolling: '5h', weekly: '周' } },
 	{ id: 'antigravity-claude', label: 'Antigravity Claude 池', short: 'AG-C', refs: ['DEEPSEEK_API_KEY'], localAuth: 'loopback', endpoint: 'http://127.0.0.1:3080/antigravity/api/quota', format: 'antigravity-quota', windowLabels: { rolling: '5h', weekly: '周' } },
-	{ id: 'workbuddy-cn', label: 'WorkBuddy 国内积分', short: 'WB-CN', refs: ['DEEPSEEK_API_KEY'], localAuth: 'loopback', endpoint: 'http://127.0.0.1:3080/plugins/dsh-connect-workbuddy/usage?region=cn', format: 'workbuddy-credits' },
-	{ id: 'workbuddy-global', label: 'WorkBuddy 国际积分', short: 'WB-GL', refs: ['DEEPSEEK_API_KEY'], localAuth: 'loopback', endpoint: 'http://127.0.0.1:3080/plugins/dsh-connect-workbuddy/usage?region=global', format: 'workbuddy-credits' },
+	{ id: 'workbuddy-cn', label: 'WorkBuddy 国内积分', short: 'WB-CN', refs: ['DEEPSEEK_API_KEY'], localAuth: 'loopback', endpoint: 'http://127.0.0.1:3080/plugins/dsh-connect-workbuddy/usage?region=cn', format: 'workbuddy-credits', currency: '积分' },
+	{ id: 'workbuddy-global', label: 'WorkBuddy 国际积分', short: 'WB-GL', refs: ['DEEPSEEK_API_KEY'], localAuth: 'loopback', endpoint: 'http://127.0.0.1:3080/plugins/dsh-connect-workbuddy/usage?region=global', format: 'workbuddy-credits', currency: '积分' },
 	{ id: 'qoder', label: 'Qoder', short: 'Qoder', refs: ['QODER_MANAGED_CREDENTIAL'], endpoint: 'https://openapi.qoder.com.cn', format: 'qoder-quota', currency: '积分' }
 ];
 
@@ -1291,8 +1294,9 @@ const FORMATS = {
 		const rate = body?.rateLimit;
 		const limited = rate?.limited === true;
 		const rateResetsAt = limited && typeof rate?.resetsAt === 'string' && rate.resetsAt ? rate.resetsAt : undefined;
+		const rateModel = typeof rate?.model === 'string' && rate.model ? rate.model : undefined;
 		const rateLine = limited
-			? `rate limited${rateResetsAt ? ` until ${rateResetsAt}` : ''}${typeof rate?.lastHitAt === 'string' && rate.lastHitAt ? ` (last 429 ${rate.lastHitAt})` : ''}`
+			? `rate limited${rateModel ? ` (${rateModel})` : ''}${rateResetsAt ? ` until ${rateResetsAt}` : ''}${typeof rate?.lastHitAt === 'string' && rate.lastHitAt ? ` (last 429 ${rate.lastHitAt})` : ''}`
 			: null;
 		const title = [
 			rateLine,
@@ -1305,7 +1309,8 @@ const FORMATS = {
 			kind: 'balance',
 			amount,
 			title,
-			...(limited ? { rateLimited: true, ...(rateResetsAt !== undefined ? { rateLimitResetsAt: rateResetsAt } : {}) } : {})
+			...(limited ? { rateLimited: true, ...(rateResetsAt !== undefined ? { rateLimitResetsAt: rateResetsAt } : {}) } : {}),
+			...(rateModel !== undefined ? { rateLimitModel: rateModel } : {})
 		};
 	},
 	// chatgpt-subscription is dispatched inline in fetchRow because it uses
