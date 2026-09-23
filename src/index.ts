@@ -858,20 +858,20 @@ const FORMAT_META = {
  * Endpoints verified against provider docs (see README "内置供应商目录").
  */
 const CATALOG = [
-	{ id: 'deepseek', label: 'DeepSeek', refs: ['DEEPSEEK_API_KEY'], endpoint: 'https://api.deepseek.com/user/balance', format: 'deepseek-balance' },
-	{ id: 'openrouter', label: 'OpenRouter', refs: ['OPENROUTER_API_KEY'], endpoint: 'https://openrouter.ai/api/v1/credits', format: 'openrouter-credits' },
-	{ id: 'siliconflow', label: 'SiliconFlow', refs: ['SILICONFLOW_API_KEY'], endpoint: 'https://api.siliconflow.com/v1/user/info', format: 'siliconflow-balance', currency: '$' },
-	{ id: 'siliconflow-cn', label: 'SiliconFlow CN', refs: ['SILICONFLOW_CN_API_KEY'], endpoint: 'https://api.siliconflow.cn/v1/user/info', format: 'siliconflow-balance' },
-	{ id: 'moonshot', label: 'Moonshot', refs: ['MOONSHOT_API_KEY'], endpoint: 'https://api.moonshot.cn/v1/users/me/balance', format: 'moonshot-balance' },
-	{ id: 'minimax', label: 'MiniMax Coding', refs: ['MINIMAX_API_KEY'], endpoint: 'https://www.minimax.io/v1/token_plan/remains', format: 'minimax-remains', windowLabels: { rolling: '5h' } },
-	{ id: 'minimax-cn', label: 'MiniMax Coding CN', refs: ['MINIMAX_CN_API_KEY'], endpoint: 'https://api.minimaxi.com/v1/token_plan/remains', format: 'minimax-remains', windowLabels: { rolling: '5h' } },
-	{ id: 'stepfun', label: 'StepFun', refs: ['STEP_API_KEY', 'STEPFUN_API_KEY'], endpoint: 'https://api.stepfun.com/v1/accounts', format: 'stepfun-accounts' },
-	{ id: 'xai', label: 'xAI', refs: ['XAI_API_KEY'], endpoint: 'https://api.x.ai/v1/billing/credits', format: 'xai-credits' },
-	{ id: 'zhipu', label: 'ZhiPu GLM', refs: ['ZHIPU_API_KEY', 'GLM_API_KEY'], endpoint: 'https://open.bigmodel.cn/api/monitor/usage/quota/limit', format: 'zhipu-quota' },
-	{ id: 'zai-coding-cn', label: 'ZhiPu GLM Coding', refs: ['ZAI_CODING_CN_API_KEY'], endpoint: 'https://open.bigmodel.cn/api/monitor/usage/quota/limit', format: 'zai-coding-quota', windowLabels: { rolling: '5h', weekly: '周', monthly: '月' } },
-	{ id: 'zai', label: 'Z.AI GLM Coding', refs: ['ZAI_API_KEY'], endpoint: 'https://api.z.ai/api/monitor/usage/quota/limit', format: 'zai-coding-quota', windowLabels: { rolling: '5h', weekly: '周', monthly: '月' } },
-	{ id: 'kimi-coding', label: 'Kimi Coding', refs: ['KIMI_API_KEY'], endpoint: 'https://api.kimi.com/coding/v1/usages', format: 'kimi-coding-usage', windowLabels: { rolling: '5h', weekly: '周' } },
-	{ id: 'opencode-go', label: 'OpenCode Go', refs: ['OPENCODE_GO_API_KEY'], endpoint: 'https://opencode.ai/zen/go/v1/usage', format: 'opencode-usage' },
+	{ id: 'deepseek', label: 'DeepSeek', short: 'DS', refs: ['DEEPSEEK_API_KEY'], endpoint: 'https://api.deepseek.com/user/balance', format: 'deepseek-balance' },
+	{ id: 'openrouter', label: 'OpenRouter', short: 'OR', refs: ['OPENROUTER_API_KEY'], endpoint: 'https://openrouter.ai/api/v1/credits', format: 'openrouter-credits' },
+	{ id: 'siliconflow', label: 'SiliconFlow', short: 'SF', refs: ['SILICONFLOW_API_KEY'], endpoint: 'https://api.siliconflow.com/v1/user/info', format: 'siliconflow-balance', currency: '$' },
+	{ id: 'siliconflow-cn', label: 'SiliconFlow CN', short: 'SF-CN', refs: ['SILICONFLOW_CN_API_KEY'], endpoint: 'https://api.siliconflow.cn/v1/user/info', format: 'siliconflow-balance' },
+	{ id: 'moonshot', label: 'Moonshot', short: 'Kimi', refs: ['MOONSHOT_API_KEY'], endpoint: 'https://api.moonshot.cn/v1/users/me/balance', format: 'moonshot-balance' },
+	{ id: 'minimax', label: 'MiniMax Coding', short: 'MM', refs: ['MINIMAX_API_KEY'], endpoint: 'https://www.minimax.io/v1/token_plan/remains', format: 'minimax-remains', windowLabels: { rolling: '5h' } },
+	{ id: 'minimax-cn', label: 'MiniMax Coding CN', short: 'MM-CN', refs: ['MINIMAX_CN_API_KEY'], endpoint: 'https://api.minimaxi.com/v1/token_plan/remains', format: 'minimax-remains', windowLabels: { rolling: '5h' } },
+	{ id: 'stepfun', label: 'StepFun', short: 'Step', refs: ['STEP_API_KEY', 'STEPFUN_API_KEY'], endpoint: 'https://api.stepfun.com/v1/accounts', format: 'stepfun-accounts' },
+	{ id: 'xai', label: 'xAI', short: 'xAI', refs: ['XAI_API_KEY'], endpoint: 'https://api.x.ai/v1/billing/credits', format: 'xai-credits' },
+	{ id: 'zhipu', label: 'ZhiPu GLM', short: 'GLM', refs: ['ZHIPU_API_KEY', 'GLM_API_KEY'], endpoint: 'https://open.bigmodel.cn/api/monitor/usage/quota/limit', format: 'zhipu-quota' },
+	{ id: 'zai-coding-cn', label: 'ZhiPu GLM Coding', short: 'GLM-C', refs: ['ZAI_CODING_CN_API_KEY'], endpoint: 'https://open.bigmodel.cn/api/monitor/usage/quota/limit', format: 'zai-coding-quota', windowLabels: { rolling: '5h', weekly: '周', monthly: '月' } },
+	{ id: 'zai', label: 'Z.AI GLM Coding', short: 'Z.AI', refs: ['ZAI_API_KEY'], endpoint: 'https://api.z.ai/api/monitor/usage/quota/limit', format: 'zai-coding-quota', windowLabels: { rolling: '5h', weekly: '周', monthly: '月' } },
+	{ id: 'kimi-coding', label: 'Kimi Coding', short: 'Kimi-C', refs: ['KIMI_API_KEY'], endpoint: 'https://api.kimi.com/coding/v1/usages', format: 'kimi-coding-usage', windowLabels: { rolling: '5h', weekly: '周' } },
+	{ id: 'opencode-go', label: 'OpenCode Go', short: 'OC-Go', refs: ['OPENCODE_GO_API_KEY'], endpoint: 'https://opencode.ai/zen/go/v1/usage', format: 'opencode-usage' },
 	// Volcengine Ark (火山方舟) has two SEPARATE subscriptions, shown as two
 	// independent rows (like two providers) that share the same AK/SK pair.
 	// Unlike Bearer-key rows these authenticate with a signed AK/SK —
@@ -881,14 +881,14 @@ const CATALOG = [
 	// Each row queries ONLY its own action; a plan the account has not
 	// subscribed to reports an inline "not subscribed" message instead of
 	// silently falling back to the other plan.
-	{ id: 'volcengine-agent', label: 'Volcengine Agent', refs: ['VOLC_ACCESS_KEY'], secretRefs: ['VOLC_SECRET_KEY'], endpoint: 'https://open.volcengineapi.com', format: 'volcengine-agent-usage', windowLabels: { rolling: '5h', weekly: '周', monthly: '月' } },
-	{ id: 'volcengine-coding', label: 'Volcengine Coding', refs: ['VOLC_ACCESS_KEY'], secretRefs: ['VOLC_SECRET_KEY'], endpoint: 'https://open.volcengineapi.com', format: 'volcengine-coding-usage', windowLabels: { rolling: '会话', weekly: '周', monthly: '月' } },
+	{ id: 'volcengine-agent', label: 'Volcengine Agent', short: 'Volc-A', refs: ['VOLC_ACCESS_KEY'], secretRefs: ['VOLC_SECRET_KEY'], endpoint: 'https://open.volcengineapi.com', format: 'volcengine-agent-usage', windowLabels: { rolling: '5h', weekly: '周', monthly: '月' } },
+	{ id: 'volcengine-coding', label: 'Volcengine Coding', short: 'Volc-C', refs: ['VOLC_ACCESS_KEY'], secretRefs: ['VOLC_SECRET_KEY'], endpoint: 'https://open.volcengineapi.com', format: 'volcengine-coding-usage', windowLabels: { rolling: '会话', weekly: '周', monthly: '月' } },
 	// ChatGPT subscription (Plus/Pro/Business via Codex OAuth). Unlike every
 	// other row this does NOT use ctx.credentials: tokens are read from
 	// ~/.codex/auth.json (written by `codex login`) and refreshed host-side.
 	// `localAuth: 'codex'` makes resolveRows skip credential probing and always
 	// surface the row (the row errors at fetch time if auth.json is missing).
-	{ id: 'chatgpt', label: 'ChatGPT', localAuth: 'codex', endpoint: CHATGPT_USAGE_URL, format: 'chatgpt-subscription', windowLabels: { rolling: '5h', weekly: '周' } },
+	{ id: 'chatgpt', label: 'ChatGPT', short: 'GPT', localAuth: 'codex', endpoint: CHATGPT_USAGE_URL, format: 'chatgpt-subscription', windowLabels: { rolling: '5h', weekly: '周' } },
 	// Local loopback rows served by other plugins on this DSH web host.
 	// These endpoints need no real credential — they ignore the Bearer
 	// header — so `localAuth: 'loopback'` keeps the row surfaced even when
@@ -898,14 +898,14 @@ const CATALOG = [
 	// also fetches without an Origin header, which these endpoints require.
 	// One antigravity format serves both pool rows; its adapter picks the
 	// bucket family (gemini-* / 3p-*) from the provider id.
-	{ id: 'antigravity-gemini', label: 'Antigravity Gemini 池', refs: ['DEEPSEEK_API_KEY'], localAuth: 'loopback', endpoint: 'http://127.0.0.1:3080/antigravity/api/quota', format: 'antigravity-quota', windowLabels: { rolling: '5h', weekly: '周' } },
-	{ id: 'antigravity-claude', label: 'Antigravity Claude 池', refs: ['DEEPSEEK_API_KEY'], localAuth: 'loopback', endpoint: 'http://127.0.0.1:3080/antigravity/api/quota', format: 'antigravity-quota', windowLabels: { rolling: '5h', weekly: '周' } },
-	{ id: 'workbuddy-cn', label: 'WorkBuddy 国内积分', refs: ['DEEPSEEK_API_KEY'], localAuth: 'loopback', endpoint: 'http://127.0.0.1:3080/plugins/dsh-connect-workbuddy/usage?region=cn', format: 'workbuddy-credits' },
-	{ id: 'workbuddy-global', label: 'WorkBuddy 国际积分', refs: ['DEEPSEEK_API_KEY'], localAuth: 'loopback', endpoint: 'http://127.0.0.1:3080/plugins/dsh-connect-workbuddy/usage?region=global', format: 'workbuddy-credits' }
+	{ id: 'antigravity-gemini', label: 'Antigravity Gemini 池', short: 'AG-G', refs: ['DEEPSEEK_API_KEY'], localAuth: 'loopback', endpoint: 'http://127.0.0.1:3080/antigravity/api/quota', format: 'antigravity-quota', windowLabels: { rolling: '5h', weekly: '周' } },
+	{ id: 'antigravity-claude', label: 'Antigravity Claude 池', short: 'AG-C', refs: ['DEEPSEEK_API_KEY'], localAuth: 'loopback', endpoint: 'http://127.0.0.1:3080/antigravity/api/quota', format: 'antigravity-quota', windowLabels: { rolling: '5h', weekly: '周' } },
+	{ id: 'workbuddy-cn', label: 'WorkBuddy 国内积分', short: 'WB-CN', refs: ['DEEPSEEK_API_KEY'], localAuth: 'loopback', endpoint: 'http://127.0.0.1:3080/plugins/dsh-connect-workbuddy/usage?region=cn', format: 'workbuddy-credits' },
+	{ id: 'workbuddy-global', label: 'WorkBuddy 国际积分', short: 'WB-GL', refs: ['DEEPSEEK_API_KEY'], localAuth: 'loopback', endpoint: 'http://127.0.0.1:3080/plugins/dsh-connect-workbuddy/usage?region=global', format: 'workbuddy-credits' }
 ];
 
 /** Keys a `catalog` override may set on an auto-discovered row. */
-const CATALOG_OVERRIDE_KEYS = ['label', 'endpoint', 'format', 'proxy', 'refs', 'secretRefs', 'currency', 'balanceTiers', 'warnPercent', 'errorPercent', 'windowLabels', 'localAuth'];
+const CATALOG_OVERRIDE_KEYS = ['label', 'short', 'endpoint', 'format', 'proxy', 'refs', 'secretRefs', 'currency', 'balanceTiers', 'warnPercent', 'errorPercent', 'windowLabels', 'localAuth'];
 
 /**
  * Format adapters: upstream JSON → RowView. Each returns a view or throws
@@ -1191,11 +1191,11 @@ const FORMATS = {
 		};
 		const rolling = win(`${family}-5h`);
 		const weekly = win(`${family}-weekly`);
-		if (!rolling && !weekly) throw new Error(`no ${family}-5h / ${family}-weekly buckets in quota.bucketRows`);
+		if (!rolling && !weekly) throw new Error(`no ${family}-5h / ${family}-weekly buckets in value.bucketRows`);
 		const windows: Record<string, any> = {};
 		if (rolling) windows.rolling = rolling;
 		if (weekly) windows.weekly = weekly;
-		const plan = typeof quota.planLabel === 'string' && quota.planLabel ? quota.planLabel : null;
+		const plan = typeof body?.value?.planLabel === 'string' && body.value.planLabel ? body.value.planLabel : null;
 		const title = [
 			plan ? `plan: ${plan}` : null,
 			rolling ? `5h: ${rolling.percent}% used${rolling.resetsAt ? ` (reset ${rolling.resetsAt})` : ''}` : null,
@@ -1258,6 +1258,7 @@ export const Config = z.object({
 	providers: z.array(z.object({
 		id: z.string().pattern(PROVIDER_ID_PATTERN).required(),
 		label: z.string().required(),
+		short: z.string(),
 		credential: z.string().role('credential-ref').required(),
 		secretCredential: z.string().role('credential-ref'),
 		region: z.string(),
@@ -1335,6 +1336,7 @@ function validateProviders(raw) {
 		return {
 			id: entry.id,
 			label: entry.label,
+			short: typeof entry.short === 'string' && entry.short ? entry.short : undefined,
 			credential: entry.credential,
 			secretCredential: entry.secretCredential,
 			region: entry.region,
@@ -1415,7 +1417,13 @@ function validateCatalog(catalog: Record<string, any>, proxies: Record<string, s
 /** JSON-safe row spec sent to the client half (render hints only, no secrets). */
 function rowSpec(provider) {
 	const meta = FORMAT_META[provider.format];
-	const spec: Record<string, any> = { id: provider.id, label: provider.label, kind: meta.kind, proxy: provider.proxy ?? null };
+	const spec: Record<string, any> = {
+		id: provider.id,
+		label: provider.label,
+		short: typeof provider.short === 'string' && provider.short ? provider.short : provider.label,
+		kind: meta.kind,
+		proxy: provider.proxy ?? null
+	};
 	if (meta.kind === 'balance') {
 		spec.currency = typeof provider.currency === 'string' && provider.currency ? provider.currency : meta.currency;
 		spec.balanceTiers = provider.balanceTiers;
@@ -1621,6 +1629,7 @@ async function resolveRows(ctx, raw) {
 			rows.push({
 				id: merged.id,
 				label: merged.label,
+				short: typeof merged.short === 'string' && merged.short ? merged.short : undefined,
 				credential: credentialRef,
 				secretCredential,
 				region: merged.region,
