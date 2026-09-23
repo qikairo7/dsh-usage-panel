@@ -971,8 +971,8 @@ const CATALOG = [
 	// also fetches without an Origin header, which these endpoints require.
 	// One antigravity format serves both pool rows; its adapter picks the
 	// bucket family (gemini-* / 3p-*) from the provider id.
-	{ id: 'antigravity-gemini', label: 'Antigravity Gemini 池', short: 'AG-G', refs: ['DEEPSEEK_API_KEY'], localAuth: 'loopback', endpoint: 'http://127.0.0.1:3080/antigravity/api/quota', format: 'antigravity-quota', windowLabels: { rolling: '5h', weekly: '周' } },
-	{ id: 'antigravity-claude', label: 'Antigravity Claude 池', short: 'AG-C', refs: ['DEEPSEEK_API_KEY'], localAuth: 'loopback', endpoint: 'http://127.0.0.1:3080/antigravity/api/quota', format: 'antigravity-quota', windowLabels: { rolling: '5h', weekly: '周' } },
+	{ id: 'antigravity-gemini', label: 'Antigravity Gemini 池', short: 'AG-G', refs: ['DEEPSEEK_API_KEY'], localAuth: 'loopback', endpoint: 'http://127.0.0.1:3080/antigravity/api/quota', format: 'antigravity-quota', windowLabels: { rolling: '当前额度' } },
+	{ id: 'antigravity-claude', label: 'Antigravity Claude 池', short: 'AG-C', refs: ['DEEPSEEK_API_KEY'], localAuth: 'loopback', endpoint: 'http://127.0.0.1:3080/antigravity/api/quota', format: 'antigravity-quota', windowLabels: { rolling: '当前额度' } },
 	{ id: 'workbuddy-cn', label: 'WorkBuddy 国内积分', short: 'WB-CN', refs: ['DEEPSEEK_API_KEY'], localAuth: 'loopback', endpoint: 'http://127.0.0.1:3080/plugins/dsh-connect-workbuddy/usage?region=cn', format: 'workbuddy-credits', currency: '积分' },
 	{ id: 'workbuddy-global', label: 'WorkBuddy 国际积分', short: 'WB-GL', refs: ['DEEPSEEK_API_KEY'], localAuth: 'loopback', endpoint: 'http://127.0.0.1:3080/plugins/dsh-connect-workbuddy/usage?region=global', format: 'workbuddy-credits', currency: '积分' },
 	{ id: 'qoder', label: 'Qoder', short: 'Qoder', refs: ['QODER_MANAGED_CREDENTIAL'], endpoint: 'https://openapi.qoder.com.cn', format: 'qoder-quota', currency: '积分' }
@@ -1247,21 +1247,43 @@ const FORMATS = {
 		throw new Error('volcengine-coding-usage is handled inline by fetchRow');
 	},
 	// Antigravity quota endpoint (GET /antigravity/api/quota of the
-	// dsh-antigravity plugin): {ok, value:{planLabel, bucketRows, ...}}.
-	// Unlike /api/status this route actively fetches the upstream quota and
-	// refills the plugin's cache, so bucketRows is always present (the
-	// status route reads a memory cache that can be empty — that is why the
-	// rows used to render "—"). One format serves two catalog rows: the
-	// adapter picks the bucket family from the provider id
-	// (antigravity-gemini -> gemini-5h / gemini-weekly, antigravity-claude
-	// -> 3p-5h / 3p-weekly). Upstream reports REMAINING percent; RowView
+	// dsh-antigravity plugin). Upstream reports REMAINING percent; RowView
 	// windows are USED percent, hence 100 - remaining. resetTime is ISO.
+	// TWO response shapes, both served by this one adapter:
+	//  • OLD: {ok, value:{planLabel, bucketRows:[{id:'gemini-5h'|'gemini-weekly'|
+	//    '3p-5h'|'3p-weekly', remainingPercent, resetTime}]}} — one format serves
+	//    two catalog rows; the adapter picks the bucket family from the provider
+	//    id (antigravity-gemini -> gemini-*, antigravity-claude -> 3p-*).
+	//  • NEW (plugin upgrade): {ok, value:{planLabel, modelRows:[{id,
+	//    remainingPercent, resetTime, provider:'MODEL_PROVIDER_GOOGLE'|
+	//    'MODEL_PROVIDER_ANTHROPIC'}]}} — the pools are keyed by the row's
+	//    `provider` field instead of the bucket id prefix. Within a pool the
+	//    SMALLEST remainingPercent row is the binding constraint, so that row
+	//    is surfaced as the single rolling window ("当前额度").
 	'antigravity-quota': (body, provider) => {
 		if (body?.ok !== true || !body?.value) throw new Error('missing ok/value envelope');
-		const rows = Array.isArray(body.value.bucketRows) ? body.value.bucketRows : [];
-		if (rows.length === 0) throw new Error('value.bucketRows is empty');
 		const family = provider?.id === 'antigravity-claude' ? '3p' : provider?.id === 'antigravity-gemini' ? 'gemini' : null;
 		if (family === null) throw new Error(`provider id must be antigravity-gemini or antigravity-claude, got ${JSON.stringify(String(provider?.id))}`);
+		const plan = typeof body?.value?.planLabel === 'string' && body.value.planLabel ? body.value.planLabel : null;
+		if (!Array.isArray(body.value.bucketRows)) {
+			// NEW modelRows shape (same envelope, no bucketRows): pool by the
+			// row's `provider` field, worst (smallest remaining) row wins.
+			const modelRows = Array.isArray(body.value.modelRows) ? body.value.modelRows : [];
+			const poolTag = family === 'gemini' ? 'MODEL_PROVIDER_GOOGLE' : 'MODEL_PROVIDER_ANTHROPIC';
+			const pool = modelRows.filter((r) => r?.provider === poolTag && Number.isFinite(Number(r?.remainingPercent)));
+			if (pool.length === 0) throw new Error(`no ${poolTag} rows in value.modelRows`);
+			const worst = pool.reduce((a, b) => (Number(a.remainingPercent) <= Number(b.remainingPercent) ? a : b));
+			const used = Math.min(100, Math.max(0, Math.round(100 - Number(worst.remainingPercent))));
+			const resetsAt = typeof worst.resetTime === 'string' && worst.resetTime ? worst.resetTime : undefined;
+			const title = [
+				plan ? `plan: ${plan}` : null,
+				`${worst.id}: ${used}% used${resetsAt ? ` (reset ${resetsAt})` : ''}`
+			].filter(Boolean).join('\n');
+			return { kind: 'usage', windows: { rolling: { percent: used, resetsAt } }, title };
+		}
+		// OLD bucketRows shape — unchanged legacy path.
+		const rows = body.value.bucketRows;
+		if (rows.length === 0) throw new Error('value.bucketRows is empty');
 		const win = (id: string) => {
 			const row = rows.find((r) => r?.id === id);
 			if (!row) return undefined;
@@ -1278,7 +1300,6 @@ const FORMATS = {
 		const windows: Record<string, any> = {};
 		if (rolling) windows.rolling = rolling;
 		if (weekly) windows.weekly = weekly;
-		const plan = typeof body?.value?.planLabel === 'string' && body.value.planLabel ? body.value.planLabel : null;
 		const title = [
 			plan ? `plan: ${plan}` : null,
 			rolling ? `5h: ${rolling.percent}% used${rolling.resetsAt ? ` (reset ${rolling.resetsAt})` : ''}` : null,
