@@ -237,6 +237,8 @@
 			'#dsh-quota-capsule:active{transform:translateY(0);box-shadow:var(--dsw-shadow-lv1,0 1px 3px rgba(0,0,0,0.06))}',
 			'#dsh-quota-capsule .dsh-capsule-item{display:flex;flex-direction:column;width:100%;gap:2px}',
 			'#dsh-quota-capsule .dsh-capsule-main{display:flex;align-items:center;width:100%;gap:8px}',
+			'#dsh-quota-capsule .dsh-capsule-main-sub{padding-left:12px}',
+			'#dsh-quota-capsule .dsh-capsule-main-sub .dsh-capsule-label{font-size:11px;font-weight:550;color:var(--dsw-alias-label-secondary,#61666b)}',
 			'#dsh-quota-capsule .dsh-capsule-label{flex:0 0 108px;width:108px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11.5px;font-weight:550;letter-spacing:-0.01em;color:var(--dsw-alias-label-primary,#1b1b1c);text-align:left}',
 			'#dsh-quota-capsule .dsh-capsule-bar{flex:1;min-width:0;height:4px;overflow:hidden;border-radius:9999px;background:var(--dsw-alias-border-l1,rgba(0,0,0,0.06));display:flex;align-items:center}',
 			'#dsh-quota-capsule .dsh-capsule-bar-fill{height:100%;border-radius:inherit;background:var(--dsw-static-green-500,#22c55e);transition:width 240ms cubic-bezier(0.16,1,0.3,1),background-color 160ms ease}',
@@ -491,15 +493,7 @@
 				// HH:MM; cross-day ones keep the date. The monthly lane keeps
 				// the historical "-%" placeholder via the same em-dash path.
 				var fmtWin = function (label, v, win = null) {
-					// Reset-card counts win when the upstream row carries them
-					// (GLM Coding CREDIT_LIMIT): '剩27127/28000' reads better
-					// than a bare percent for window quotas.
-					var rem = win && Number(win.remaining);
-					var tot = win && Number(win.total);
-					var hasCounts = win && Number.isFinite(rem) && Number.isFinite(tot) && tot > 0;
-					var seg = label + " " + (hasCounts
-						? "剩" + rem.toLocaleString() + "/" + tot.toLocaleString()
-						: (v === null ? "—" : v + "%"));
+					var seg = label + " " + (v === null ? "—" : v + "%");
 					if (win && win.resetsAt) {
 						var short = fmtShortReset(win.resetsAt);
 						if (short) seg += " (" + short + ")";
@@ -555,9 +549,17 @@
 					}
 					exhaustedReset = cands.length > 0 ? cands[0] : null;
 				}
+				// Per-window rows for the collapsed capsule ("reset cards"):
+				// each carried window becomes its own row (5h / 周 / 月), so a
+				// plan with both a 5h and a weekly window shows both.
+				var windowsList = [];
+				if (w.rolling) windowsList.push({ label: labels.rolling, percent: rp, resetsAt: w.rolling.resetsAt });
+				if (w.weekly) windowsList.push({ label: labels.weekly, percent: wp, resetsAt: w.weekly.resetsAt });
+				if (w.monthly) windowsList.push({ label: labels.monthly, percent: mp, resetsAt: w.monthly.resetsAt });
 				return {
 					kind: "usage", status: status, summary: shownPct + "%", value: null,
 					usageText: textSegs.join(" · "),
+					windowsList: windowsList,
 					barPercent: Math.min(Math.max(shownPct, 0), 100),
 					caption: exhaustedReset !== null
 						? t("peakUsageWaiting", { pct: shownPct, time: fmtNextReset(t, exhaustedReset) })
@@ -1249,35 +1251,64 @@
 							var pct = typeof rview.barPercent === "number" && Number.isFinite(rview.barPercent)
 								? Math.min(Math.max(rview.barPercent, 0), 100)
 								: 0;
-							var mainChildren = [
-								React.createElement("span", {
-									key: "name",
-									className: "dsh-capsule-label",
-									title: rspec.label
-								}, rspec.label)
-							];
-							if (rview.kind === "usage") {
-								mainChildren.push(React.createElement("span", { key: "bar", className: "dsh-capsule-bar" },
+							var renderCapsuleRow = function (rowKey, rowName, rowPct, rowStatus, rowValue, isSub) {
+								var kids = [
 									React.createElement("span", {
-										className: "dsh-capsule-bar-fill state-" + (rview.status || "ok"),
-										style: { width: pct + "%" }
-									})
-								));
+										key: "name",
+										className: "dsh-capsule-label",
+										title: isSub ? rowName : rspec.label
+									}, rowName)
+								];
+								if (rowPct !== null) {
+									kids.push(React.createElement("span", { key: "bar", className: "dsh-capsule-bar" },
+										React.createElement("span", {
+											className: "dsh-capsule-bar-fill state-" + (rowStatus || "ok"),
+											style: { width: Math.min(Math.max(rowPct, 0), 100) + "%" }
+										})
+									));
+								} else {
+									kids.push(React.createElement("span", { key: "spacer", className: "dsh-capsule-spacer" }));
+								}
+								kids.push(React.createElement("span", {
+									key: "value",
+									className: "dsh-capsule-value state-" + (rowStatus || "ok")
+								}, rowValue));
+								return React.createElement("div", {
+									key: rspec.id + "-" + rowKey,
+									className: "dsh-capsule-main" + (isSub ? " dsh-capsule-main-sub" : "")
+								}, kids);
+							};
+							// "Reset cards": a usage provider with several carried
+							// windows gets one row per window (label on the first
+							// row, window label indented on the rest); single-window
+							// usage keeps one row with its reset time inline.
+							var itemRows = [];
+							var winList = rview.kind === "usage" && Array.isArray(rview.windowsList) ? rview.windowsList : [];
+							if (winList.length > 1) {
+								var warnPct = typeof settings.warn[rspec.id] === "number" && Number.isFinite(settings.warn[rspec.id]) && settings.warn[rspec.id] >= 0 ? settings.warn[rspec.id] : (rspec.warnPercent || 70);
+								var errPct = Math.max(rspec.errorPercent || 90, warnPct + 1);
+								for (var wi = 0; wi < winList.length; wi++) {
+									var wrow = winList[wi];
+									var wst = wrow.percent >= errPct ? "error" : wrow.percent >= warnPct ? "warn" : "ok";
+									var wshort = wrow.resetsAt ? fmtShortReset(wrow.resetsAt) : "";
+									itemRows.push(renderCapsuleRow("w" + wi,
+										wi === 0 ? rspec.label : (wrow.label || "?"),
+										wrow.percent, wst,
+										(wrow.percent === null ? "—" : wrow.percent + "%") + (wshort ? " (" + wshort + ")" : ""),
+										wi > 0));
+								}
+							} else if (winList.length === 1) {
+								var s0 = winList[0];
+								var sshort = s0.resetsAt ? fmtShortReset(s0.resetsAt) : "";
+								itemRows.push(renderCapsuleRow("main", rspec.label, s0.percent, rview.status,
+									(s0.percent === null ? "—" : s0.percent + "%") + (sshort ? " (" + sshort + ")" : ""), false));
 							} else {
-								mainChildren.push(React.createElement("span", { key: "spacer", className: "dsh-capsule-spacer" }));
+								itemRows.push(renderCapsuleRow("main", rspec.label, rview.kind === "usage" ? pct : null, rview.status, rview.summary || "—", false));
 							}
-							mainChildren.push(React.createElement("span", {
-								key: "value",
-								className: "dsh-capsule-value state-" + (rview.status || "ok")
-							}, rview.summary || "—"));
 
-							var itemChildren = [
-								React.createElement("div", { key: "main", className: "dsh-capsule-main" }, mainChildren)
-							];
+							var itemChildren = itemRows;
 							var detailText = null;
-							if (rview.kind === "usage" && rview.usageText) {
-								detailText = rview.usageText;
-							} else if (rview.kind === "balance" && rview.rateLimited && rview.sub) {
+							if (rview.kind === "balance" && rview.rateLimited && rview.sub) {
 								detailText = rview.sub;
 							}
 							if (detailText) {
