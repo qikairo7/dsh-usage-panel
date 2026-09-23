@@ -1146,7 +1146,16 @@ const FORMATS = {
 		const mkWin = (l) => {
 			if (!l) return undefined;
 			const p = pct(l) ?? countPct(l);
-			return { percent: p === null ? null : p, resetsAt: resets(l) };
+			// Reset-card counts (user-facing "重置卡"): CREDIT_LIMIT rows carry
+			// remaining/usage raw counts -- surface them so the client can show
+			// '剩27127/28000' instead of a bare percentage.
+			const rem = Number(l?.remaining);
+			const tot = Number(l?.usage);
+			return {
+				percent: p === null ? null : p,
+				resetsAt: resets(l),
+				...(Number.isFinite(rem) && Number.isFinite(tot) && tot > 0 ? { remaining: rem, total: tot } : {})
+			};
 		};
 		const windows: Record<string, any> = {};
 		if (rolling) windows.rolling = mkWin(rolling);

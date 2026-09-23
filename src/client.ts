@@ -491,7 +491,15 @@
 				// HH:MM; cross-day ones keep the date. The monthly lane keeps
 				// the historical "-%" placeholder via the same em-dash path.
 				var fmtWin = function (label, v, win = null) {
-					var seg = label + " " + (v === null ? "—" : v + "%");
+					// Reset-card counts win when the upstream row carries them
+					// (GLM Coding CREDIT_LIMIT): '剩27127/28000' reads better
+					// than a bare percent for window quotas.
+					var rem = win && Number(win.remaining);
+					var tot = win && Number(win.total);
+					var hasCounts = win && Number.isFinite(rem) && Number.isFinite(tot) && tot > 0;
+					var seg = label + " " + (hasCounts
+						? "剩" + rem.toLocaleString() + "/" + tot.toLocaleString()
+						: (v === null ? "—" : v + "%"));
 					if (win && win.resetsAt) {
 						var short = fmtShortReset(win.resetsAt);
 						if (short) seg += " (" + short + ")";
@@ -598,7 +606,7 @@
 			else if (amount <= tiers.warn) { status2 = "warn"; sub = t("balanceWarn"); }
 			else if (amount <= tiers.healthy) { status2 = "ok"; sub = t("balanceOk"); }
 			else { status2 = "ok"; sub = t("balanceRich"); }
-			var shown = (spec.currency || "¥") + amount.toFixed(2);
+			var shown = (spec.currency || "¥") + (Number.isInteger(amount) ? amount.toLocaleString() : amount.toFixed(2));
 			return {
 				kind: "balance", status: status2, summary: shown,
 				value: shown, sub: sub, usageText: null, barPercent: 0, caption: "",
