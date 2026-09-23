@@ -898,8 +898,8 @@ const CATALOG = [
 	// also fetches without an Origin header, which these endpoints require.
 	// One antigravity format serves both pool rows; its adapter picks the
 	// bucket family (gemini-* / 3p-*) from the provider id.
-	{ id: 'antigravity-gemini', label: 'Antigravity Gemini 池', refs: ['DEEPSEEK_API_KEY'], localAuth: 'loopback', endpoint: 'http://127.0.0.1:3080/antigravity/api/status', format: 'antigravity-quota', windowLabels: { rolling: '5h', weekly: '周' } },
-	{ id: 'antigravity-claude', label: 'Antigravity Claude 池', refs: ['DEEPSEEK_API_KEY'], localAuth: 'loopback', endpoint: 'http://127.0.0.1:3080/antigravity/api/status', format: 'antigravity-quota', windowLabels: { rolling: '5h', weekly: '周' } },
+	{ id: 'antigravity-gemini', label: 'Antigravity Gemini 池', refs: ['DEEPSEEK_API_KEY'], localAuth: 'loopback', endpoint: 'http://127.0.0.1:3080/antigravity/api/quota', format: 'antigravity-quota', windowLabels: { rolling: '5h', weekly: '周' } },
+	{ id: 'antigravity-claude', label: 'Antigravity Claude 池', refs: ['DEEPSEEK_API_KEY'], localAuth: 'loopback', endpoint: 'http://127.0.0.1:3080/antigravity/api/quota', format: 'antigravity-quota', windowLabels: { rolling: '5h', weekly: '周' } },
 	{ id: 'workbuddy-cn', label: 'WorkBuddy 国内积分', refs: ['DEEPSEEK_API_KEY'], localAuth: 'loopback', endpoint: 'http://127.0.0.1:3080/plugins/dsh-connect-workbuddy/usage?region=cn', format: 'workbuddy-credits' },
 	{ id: 'workbuddy-global', label: 'WorkBuddy 国际积分', refs: ['DEEPSEEK_API_KEY'], localAuth: 'loopback', endpoint: 'http://127.0.0.1:3080/plugins/dsh-connect-workbuddy/usage?region=global', format: 'workbuddy-credits' }
 ];
@@ -1163,18 +1163,20 @@ const FORMATS = {
 	'volcengine-coding-usage': () => {
 		throw new Error('volcengine-coding-usage is handled inline by fetchRow');
 	},
-	// Antigravity loopback status (dsh-antigravity plugin). One format
-	// serves two catalog rows: the adapter picks the bucket family from
-	// the provider id (antigravity-gemini -> gemini-5h / gemini-weekly,
-	// antigravity-claude -> 3p-5h / 3p-weekly). Upstream reports REMAINING
-	// percent; RowView windows are USED percent, hence 100 - remaining.
-	// resetTime is already an ISO string.
+	// Antigravity quota endpoint (GET /antigravity/api/quota of the
+	// dsh-antigravity plugin): {ok, value:{planLabel, bucketRows, ...}}.
+	// Unlike /api/status this route actively fetches the upstream quota and
+	// refills the plugin's cache, so bucketRows is always present (the
+	// status route reads a memory cache that can be empty — that is why the
+	// rows used to render "—"). One format serves two catalog rows: the
+	// adapter picks the bucket family from the provider id
+	// (antigravity-gemini -> gemini-5h / gemini-weekly, antigravity-claude
+	// -> 3p-5h / 3p-weekly). Upstream reports REMAINING percent; RowView
+	// windows are USED percent, hence 100 - remaining. resetTime is ISO.
 	'antigravity-quota': (body, provider) => {
 		if (body?.ok !== true || !body?.value) throw new Error('missing ok/value envelope');
-		if (body.value.authenticated !== true) throw new Error(`not authenticated (login: ${String(body.value.login?.status ?? 'unknown')})`);
-		const quota = body.value.quota;
-		const rows = Array.isArray(quota?.bucketRows) ? quota.bucketRows : [];
-		if (rows.length === 0) throw new Error('quota.bucketRows is empty');
+		const rows = Array.isArray(body.value.bucketRows) ? body.value.bucketRows : [];
+		if (rows.length === 0) throw new Error('value.bucketRows is empty');
 		const family = provider?.id === 'antigravity-claude' ? '3p' : provider?.id === 'antigravity-gemini' ? 'gemini' : null;
 		if (family === null) throw new Error(`provider id must be antigravity-gemini or antigravity-claude, got ${JSON.stringify(String(provider?.id))}`);
 		const win = (id: string) => {
