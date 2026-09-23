@@ -76,6 +76,8 @@
 				nextReset: "下次重置 {time}",
 				balanceCritical: "建议充值",
 				balanceWarn: "余额紧张",
+				rateLimited: "频控中",
+				rateLimitedReset: "频控中 · {time} 重置",
 				balanceOk: "余额正常",
 				balanceRich: "余额充足",
 				settingsProviders: "显示供应商",
@@ -143,6 +145,8 @@
 				nextReset: "Next reset {time}",
 				balanceCritical: "Top-up suggested",
 				balanceWarn: "Running low",
+				rateLimited: "Rate limited",
+				rateLimitedReset: "Rate limited · resets {time}",
 				balanceOk: "Healthy",
 				balanceRich: "Plenty",
 				settingsProviders: "Providers",
@@ -494,7 +498,16 @@
 			}
 			var tiers = effectiveTiers(spec, warnOverride);
 			var status2, sub;
-			if (amount <= tiers.critical) { status2 = "error"; sub = t("balanceCritical"); }
+			// Rate-limited balance rows (WorkBuddy 429 soft-rate window)
+			// outrank the tier judgement: the dot turns error and the sub
+			// line carries the countdown even while the remaining amount
+			// itself still looks healthy.
+			if (view.rateLimited === true) {
+				status2 = "error";
+				var rateReset = typeof view.rateLimitResetsAt === "string" && view.rateLimitResetsAt ? fmtShortReset(view.rateLimitResetsAt) : "";
+				sub = rateReset ? t("rateLimitedReset", { time: rateReset }) : t("rateLimited");
+			}
+			else if (amount <= tiers.critical) { status2 = "error"; sub = t("balanceCritical"); }
 			else if (amount <= tiers.warn) { status2 = "warn"; sub = t("balanceWarn"); }
 			else if (amount <= tiers.healthy) { status2 = "ok"; sub = t("balanceOk"); }
 			else { status2 = "ok"; sub = t("balanceRich"); }
