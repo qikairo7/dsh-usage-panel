@@ -971,8 +971,8 @@ const CATALOG = [
 	// also fetches without an Origin header, which these endpoints require.
 	// One antigravity format serves both pool rows; its adapter picks the
 	// bucket family (gemini-* / 3p-*) from the provider id.
-	{ id: 'antigravity-gemini', label: 'Antigravity Gemini 池', short: 'AG-G', refs: ['DEEPSEEK_API_KEY'], localAuth: 'loopback', endpoint: 'http://127.0.0.1:3080/antigravity/api/quota', format: 'antigravity-quota', windowLabels: { rolling: '当前额度' } },
-	{ id: 'antigravity-claude', label: 'Antigravity Claude 池', short: 'AG-C', refs: ['DEEPSEEK_API_KEY'], localAuth: 'loopback', endpoint: 'http://127.0.0.1:3080/antigravity/api/quota', format: 'antigravity-quota', windowLabels: { rolling: '当前额度' } },
+	{ id: 'antigravity-gemini', label: 'Antigravity Gemini 池', short: 'AG-G', refs: ['DEEPSEEK_API_KEY'], localAuth: 'loopback', endpoint: 'http://127.0.0.1:3080/antigravity/api/quota', format: 'antigravity-quota', windowLabels: { rolling: '5h', weekly: '周' } },
+	{ id: 'antigravity-claude', label: 'Antigravity Claude 池', short: 'AG-C', refs: ['DEEPSEEK_API_KEY'], localAuth: 'loopback', endpoint: 'http://127.0.0.1:3080/antigravity/api/quota', format: 'antigravity-quota', windowLabels: { rolling: '5h', weekly: '周' } },
 	{ id: 'workbuddy-cn', label: 'WorkBuddy 国内积分', short: 'WB-CN', refs: ['DEEPSEEK_API_KEY'], localAuth: 'loopback', endpoint: 'http://127.0.0.1:3080/plugins/dsh-connect-workbuddy/usage?region=cn', format: 'workbuddy-credits', currency: '积分' },
 	{ id: 'workbuddy-global', label: 'WorkBuddy 国际积分', short: 'WB-GL', refs: ['DEEPSEEK_API_KEY'], localAuth: 'loopback', endpoint: 'http://127.0.0.1:3080/plugins/dsh-connect-workbuddy/usage?region=global', format: 'workbuddy-credits', currency: '积分' },
 	{ id: 'qoder', label: 'Qoder', short: 'Qoder', refs: ['QODER_MANAGED_CREDENTIAL'], endpoint: 'https://openapi.qoder.com.cn', format: 'qoder-quota', currency: '积分' }
@@ -1265,26 +1265,15 @@ const FORMATS = {
 		const family = provider?.id === 'antigravity-claude' ? '3p' : provider?.id === 'antigravity-gemini' ? 'gemini' : null;
 		if (family === null) throw new Error(`provider id must be antigravity-gemini or antigravity-claude, got ${JSON.stringify(String(provider?.id))}`);
 		const plan = typeof body?.value?.planLabel === 'string' && body.value.planLabel ? body.value.planLabel : null;
-		if (!Array.isArray(body.value.bucketRows)) {
-			// NEW modelRows shape (same envelope, no bucketRows): pool by the
-			// row's `provider` field, worst (smallest remaining) row wins.
-			const modelRows = Array.isArray(body.value.modelRows) ? body.value.modelRows : [];
-			const poolTag = family === 'gemini' ? 'MODEL_PROVIDER_GOOGLE' : 'MODEL_PROVIDER_ANTHROPIC';
-			const pool = modelRows.filter((r) => r?.provider === poolTag && Number.isFinite(Number(r?.remainingPercent)));
-			if (pool.length === 0) throw new Error(`no ${poolTag} rows in value.modelRows`);
-			const worst = pool.reduce((a, b) => (Number(a.remainingPercent) <= Number(b.remainingPercent) ? a : b));
-			const used = Math.min(100, Math.max(0, Math.round(100 - Number(worst.remainingPercent))));
-			const resetsAt = typeof worst.resetTime === 'string' && worst.resetTime ? worst.resetTime : undefined;
-			const title = [
-				plan ? `plan: ${plan}` : null,
-				`${worst.id}: ${used}% used${resetsAt ? ` (reset ${resetsAt})` : ''}`
-			].filter(Boolean).join('\n');
-			return { kind: 'usage', windows: { rolling: { percent: used, resetsAt } }, title };
-		}
-		// OLD bucketRows shape — unchanged legacy path.
-		const rows = body.value.bucketRows;
-		if (rows.length === 0) throw new Error('value.bucketRows is empty');
-		const win = (id: string) => {
+		// BOTH shapes can arrive together. bucketRows is the legacy bucket list
+		// but it goes STALE upstream (observed live 2026-09-24: gemini-5h frozen
+		// at remainingPercent 100 while modelRows showed the same pool at 4.4),
+		// so modelRows - the live per-model quota - wins for the rolling window.
+		// bucketRows remains the only source for the weekly bucket and the
+		// rolling fallback when the plugin stops serving modelRows.
+		const rows = Array.isArray(body.value.bucketRows) ? body.value.bucketRows : null;
+		const bucketWin = (id: string) => {
+			if (!rows) return undefined;
 			const row = rows.find((r) => r?.id === id);
 			if (!row) return undefined;
 			const remaining = Number(row.remainingPercent);
@@ -1294,15 +1283,27 @@ const FORMATS = {
 				resetsAt: typeof row.resetTime === 'string' && row.resetTime ? row.resetTime : undefined
 			};
 		};
-		const rolling = win(`${family}-5h`);
-		const weekly = win(`${family}-weekly`);
-		if (!rolling && !weekly) throw new Error(`no ${family}-5h / ${family}-weekly buckets in value.bucketRows`);
+		const modelRows = Array.isArray(body.value.modelRows) ? body.value.modelRows : [];
+		const poolTag = family === 'gemini' ? 'MODEL_PROVIDER_GOOGLE' : 'MODEL_PROVIDER_ANTHROPIC';
+		const pool = modelRows.filter((r) => r?.provider === poolTag && Number.isFinite(Number(r?.remainingPercent)));
+		let rolling = bucketWin(`${family}-5h`);
+		let rollingSource = 'bucketRows';
+		if (pool.length > 0) {
+			const worst = pool.reduce((a, b) => (Number(a.remainingPercent) <= Number(b.remainingPercent) ? a : b));
+			rolling = {
+				percent: Math.min(100, Math.max(0, Math.round(100 - Number(worst.remainingPercent)))),
+				resetsAt: typeof worst.resetTime === 'string' && worst.resetTime ? worst.resetTime : undefined
+			};
+			rollingSource = `modelRows:${worst.id}`;
+		}
+		const weekly = bucketWin(`${family}-weekly`);
+		if (!rolling && !weekly) throw new Error(`no ${poolTag} rows in value.modelRows and no ${family}-5h / ${family}-weekly buckets in value.bucketRows`);
 		const windows: Record<string, any> = {};
 		if (rolling) windows.rolling = rolling;
 		if (weekly) windows.weekly = weekly;
 		const title = [
 			plan ? `plan: ${plan}` : null,
-			rolling ? `5h: ${rolling.percent}% used${rolling.resetsAt ? ` (reset ${rolling.resetsAt})` : ''}` : null,
+			rolling ? `5h: ${rolling.percent}% used [${rollingSource}]${rolling.resetsAt ? ` (reset ${rolling.resetsAt})` : ''}` : null,
 			weekly ? `weekly: ${weekly.percent}% used${weekly.resetsAt ? ` (reset ${weekly.resetsAt})` : ''}` : null
 		].filter(Boolean).join('\n');
 		return { kind: 'usage', windows, title };
