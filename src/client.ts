@@ -260,6 +260,7 @@
 			'#dsh-quota-capsule .dot-workbuddy,#dsh-quota-card .dot-workbuddy{background:var(--dsw-dot-workbuddy,#00B42A)}',
 			'#dsh-quota-capsule .dot-deepseek,#dsh-quota-card .dot-deepseek{background:var(--dsw-dot-deepseek,#165DFF)}',
 			'#dsh-quota-capsule .dot-qoder,#dsh-quota-card .dot-qoder{background:var(--dsw-dot-qoder,#F5319D)}',
+			'#dsh-quota-capsule .dot-default,#dsh-quota-card .dot-default{background:var(--dsw-dot-default,#C9CDD4)}',
 			'#dsh-quota-capsule{width:384px;max-width:min(384px,calc(100vw - 36px));box-sizing:border-box;background:var(--dsw-surface,#FFFFFF);border:1px solid var(--dsw-border,#E5E6EB);border-radius:var(--dsw-radius-card,8px);box-shadow:var(--dsw-shadow-card,0 4px 10px rgba(0,0,0,0.1));padding:14px 16px;cursor:pointer;user-select:none;-webkit-user-select:none;touch-action:none;outline:none;color:inherit;font:inherit;text-align:left;transition:box-shadow .2s ease}',
 			'#dsh-quota-capsule:hover{box-shadow:0 6px 16px rgba(0,0,0,0.12)}',
 			'#dsh-quota-capsule:active{box-shadow:0 2px 6px rgba(0,0,0,0.08)}',
@@ -415,6 +416,7 @@
 		var POOL_DOT_BY_ID = {
 			"chatgpt": "dot-chatgpt",
 			"zai-coding-cn": "dot-zhipu",
+			"zai": "dot-zhipu",
 			"antigravity-gemini": "dot-aggemini",
 			"antigravity-claude": "dot-agclaude",
 			"workbuddy-cn": "dot-workbuddy",
@@ -424,14 +426,21 @@
 		};
 		function poolDotClass(id) {
 			var cls = POOL_DOT_BY_ID[id];
-			if (!cls) throw new Error("dsh-quota-panel: no pool dot colour mapped for provider id: " + id);
+			// View-boundary degradation, not a throw: an unmapped provider id
+			// must never kill the whole panel (that crashed the UI once - the
+			// legacy 'zai' catalog row was missing here). Render a neutral dot
+			// and report loudly instead.
+			if (!cls) {
+				console.warn("dsh-quota-panel: no pool dot colour mapped for provider id: " + id);
+				return "dot-default";
+			}
 			return cls;
 		}
 
 		// Collapsed-capsule sections (design mock): usage pools on top, the
 		// balance pools below the divider. Ids outside this list render in
 		// the balance section (and throw on the dot lookup above).
-		var USAGE_POOL_IDS = { "chatgpt": true, "zai-coding-cn": true, "antigravity-gemini": true, "antigravity-claude": true };
+		var USAGE_POOL_IDS = { "chatgpt": true, "zai-coding-cn": true, "zai": true, "antigravity-gemini": true, "antigravity-claude": true };
 
 		// Inline SVG icons (Arco outline style; stroke follows text colour).
 		var ICON_REFRESH = React.createElement("svg", { width: "15", height: "15", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round" },
