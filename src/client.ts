@@ -1678,57 +1678,6 @@ import type {
 			);
 		}
 
-		// ─── Surface B: Composer Bottom Status Bar ──────────────────────────────────
-
-		function ComposerStatusBar(props: { t: (key: string, vars?: Record<string, unknown>) => string; ctx: any }) {
-			const { t, ctx } = props;
-			const [summary, setSummary] = React.useState(null as SummaryResult | null);
-			const [error, setError] = React.useState(null as string | null);
-
-			const fetchSummary = React.useCallback(() => {
-				callRpc<SummaryResult>('summary', { range: 'today' })
-					.then((value) => {
-						setSummary(value);
-						setError(null);
-					})
-					.catch((err: unknown) => {
-						// Fail loud in the surface, never render a fake zero: the chip
-						// shows — and the tooltip carries the reason.
-						const message = String((err as Error | null)?.message ?? err);
-						setError(message);
-						console.error('usage-panel composer status bar: summary fetch failed:', message);
-					});
-			}, []);
-
-			React.useEffect(() => {
-				fetchSummary();
-				const timer = setInterval(fetchSummary, 60000);
-				return () => clearInterval(timer);
-			}, [fetchSummary]);
-
-			const tokensStr = summary && error === null ? formatTokens(summary.tokens.total) : '—';
-			const costStr = summary && error === null ? formatCostCny(summary.cost.total) : '—';
-
-			const handleClick = () => {
-				try {
-					ctx.sidebarRight?.openTab(SIDEBAR_TAB_KIND);
-				} catch (err) {
-					console.error('Failed to open sidebar tab', err);
-				}
-			};
-
-			return React.createElement(
-				'div',
-				{
-					className: 'dup-composer-chip',
-					onClick: handleClick,
-					title: error !== null ? t('loadError', { message: error }) : t('clickToOpen')
-				},
-				React.createElement(IconBolt),
-				React.createElement('span', null, t('composerBarToday', { tokens: tokensStr, cost: costStr }))
-			);
-		}
-
 		// ─── Surface C: Permanent Dock Glanceable Pill ──────────────────────────────
 
 		function InputDockPill(props: { t: (key: string, vars?: Record<string, unknown>) => string; ctx: any }) {
@@ -1883,19 +1832,6 @@ import type {
 					for (const dispose of disposers) dispose();
 				};
 			});
-
-			// 4. Register Surface B: Composer Bottom Status Bar
-			ctx.slots.inject('conversation.composer.dock', () =>
-				ctx.slots.register(
-					{
-						name: 'conversation.composer.dock',
-						id: 'usage-composer-dock',
-						order: 15,
-						locale: NS
-					},
-					() => React.createElement(ComposerStatusBar, { t, ctx })
-				)
-			);
 
 			// 5. Register Surface C: Input Permanent Dock Pill
 			ctx.slots.inject('conversation.input.dock', () =>
