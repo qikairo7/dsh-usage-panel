@@ -8,7 +8,10 @@
     "outDir": "lib",
     "declaration": true,
     "skipLibCheck": true,
-    "strict": false,
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
     "types": ["node"]
   },
   "include": ["src/**/*.ts"]

@@ -1,0 +1,97 @@
+{
+  "fetchedAt": "2026-09-25T06:24:05+08:00",
+  "sourceRegistry": "C:/Users/Administrator/.agents/skills/web-router/references/providers.json（v4.2.5，baseline 2026-09-22）",
+  "registryNote": "冻结基线 web-router-baseline-v3.0.0/ 内无 references/providers.json（实测仅 SKILL.md + 4 个参考 md），渠道清单取自生效 skill 的机器真源。",
+  "fx": { "USD_CNY": 6.722655, "source": "https://open.er-api.com/v6/latest/USD", "asOf": "2026-09-24", "evidence": "reports/probes/fx-usd.json" },
+  "channels": [
+    {
+      "channel": "kimi",
+      "routerVariants": ["kimi:pro", "kimi:fetch"],
+      "costModel": "per-call",
+      "priceMode": "official",
+      "prices": {
+        "search-basic": { "cny": 0.01, "usd": 0.00149 },
+        "search-pro": { "cny": 0.015, "usd": 0.00223 },
+        "fetch": { "cny": 0.01, "usd": 0.00149 },
+        "legacy-websearch-builtin": { "cny": 0.03, "usd": 0.00446, "note": "旧 $web_search 内置工具，官方公告 2026-10-20 下线，新接入用独立 REST 接口" }
+      },
+      "billingRule": "HTTP 200 且结果非空才计费（providers.json + 官方页口径）",
+      "verification": "官方页 platform.kimi.com/docs/guide/use-web-search 计费表（Basic ¥0.01/次、Pro ¥0.015/次、网页抓取 ¥0.01/次）与本地注册表 providers.json 完全一致，双源核实 ✓",
+      "sources": ["https://platform.kimi.com/docs/guide/use-web-search", "https://platform.kimi.com/docs/pricing/websearch", "providers.json#kimi"]
+    },
+    {
+      "channel": "aliyun",
+      "routerVariants": ["aliyun:mcp"],
+      "costModel": "per-call",
+      "priceMode": "official",
+      "prices": {
+        "lianwang-search-mcp": { "cny": 0.029, "usd": 0.00431, "note": "29 元/千次；全部用户前 2000 次免费（官方现行口径，详情页 token-plan-harness-tool）" },
+        "builtin-search-turbo": { "cny": 0.003, "usd": 0.000446, "note": "模型内置联网搜索策略，3 元/千次；2026-02-27 起正式计费；仅华北2（北京）地域" },
+        "builtin-search-max": { "cny": 0.004, "usd": 0.000595, "note": "4 元/千次；仅华北2（北京）地域" },
+        "builtin-search-agent": { "cny": 0.004, "usd": 0.000595, "note": "4 元/千次（北京/弗吉尼亚/香港/东京/法兰克福）；新加坡地域 73.39 元/千次 ≈ ¥0.0734/次；agent_max 限时优惠含网页抓取" }
+      },
+      "billingRule": "搜索费用与模型 Token 费用分开计算；限流 15 RPS/主账号",
+      "verification": "⚠️ 口径漂移：官方现行页 = ¥0.029/次 + 全员 2000 次免费；本地注册表（baseline 2026-09-22）= ¥0.03/次 + 新用户 200 次免费。疑官方调价/扩免费额度后注册表未更新——使用面板若直接抄注册表会多计 ~3.4%。需本机付费探针（healthcheck -AllowPaidProbe）复核实际扣费后更新 providers.json。",
+      "sources": ["https://help.aliyun.com/zh/model-studio/web-search（firecrawl 实抓，证据 reports/probes/aliyun-websearch.md L4172-L4194）", "providers.json#aliyun"]
+    },
+    {
+      "channel": "exa",
+      "routerVariants": ["Exa"],
+      "costModel": "per-call",
+      "priceMode": "official",
+      "prices": {
+        "search": { "usd": 0.007, "note": "$7/1k 次，≤10 结果；每多 1 结果 +$1/1k" },
+        "deep-search": { "usd": 0.012 },
+        "deep-reasoning-search": { "usd": 0.015 },
+        "contents": { "usd": 0.001, "unit": "page" },
+        "monitors": { "usd": 0.015 },
+        "answer": { "usd": 0.005 },
+        "agent": { "usd": null, "note": "按 effort 档：minimal $0.012 / low $0.025 / medium $0.10 / high $0.50 / x-high $1.00 每次请求；ACU $0.10；Agent 内 search tool call $0.005/次" }
+      },
+      "billingRule": "PAYGO；每月赠 $10 免费额度（Starter 档）",
+      "verification": "官方 exa.ai/pricing Endpoint pricing 表 Search $7/1k 与注册表 $0.007/次一致，双源核实 ✓",
+      "sources": ["https://exa.ai/pricing（Jina 实抓，证据 reports/probes/exa-pricing.md L119-L153）", "providers.json#Exa"]
+    },
+    {
+      "channel": "firecrawl",
+      "routerVariants": ["firecrawl", "firecrawl-scrape/crawl/map/parse/interact"],
+      "costModel": "subscription+credits",
+      "priceMode": "official",
+      "prices": {
+        "credit-overage": { "usd": 0.005, "note": "$5 / 1000 extra credits（Hobby 档超额价，官方页明示）" },
+        "free-plan": { "usd": 0, "quota": "500 次搜索 或 1000 页抓取/月；2 并发" },
+        "hobby": { "usdPerMonth": 16, "quota": "2500 次搜索 或 5000 页抓取/月；5 并发（年付价）" },
+        "standard": { "usdPerMonth": 83, "quota": "10 万 credits/月档（年付价）" }
+      },
+      "billingRule": "search 有匿名/免费额度；scrape/crawl/parse 扣 credits；余额查 firecrawl --status",
+      "verification": "官方 firecrawl.dev/pricing 已核（单价 $5/1000 credits）。⚠️ 待确认：1 credit 对应各端点（scrape 1 页=1 credit？crawl/parse 系数？）的映射在 docs.firecrawl.dev，本轮未抓。",
+      "sources": ["https://www.firecrawl.dev/pricing（web_fetch 实抓）", "providers.json#firecrawl"]
+    },
+    {
+      "channel": "zhipu",
+      "routerVariants": ["zhipu:search", "zhipu:read"],
+      "costModel": "plan-quota",
+      "priceMode": "registry",
+      "prices": { "mcp": { "cny": null, "note": "不按次计费：GLM Coding Plan 套餐额度，MCP 调用系数 1.2" } },
+      "sources": ["providers.json#zhipu"],
+      "verification": "单源（注册表）；套餐额度制无公开单价页可核。"
+    },
+    {
+      "channel": "baidu",
+      "routerVariants": ["baidu", "baidu:freshness"],
+      "costModel": "quota+postpaid",
+      "priceMode": "registry",
+      "prices": { "daily-free": { "calls": 50 }, "overage": { "note": "超额按量后付费（千帆价目未核）" } },
+      "sources": ["providers.json#baidu"],
+      "verification": "单源（注册表）；熔断阈值 48/50 本地策略。"
+    },
+    {
+      "channel": "web_search",
+      "routerVariants": ["web_search"],
+      "costModel": "harness-balance",
+      "priceMode": "registry",
+      "prices": { "note": "DSH 原生，依赖账户余额，402 即失效；无公开单价" },
+      "sources": ["providers.json#web_search"]
+    }
+  ]
+}

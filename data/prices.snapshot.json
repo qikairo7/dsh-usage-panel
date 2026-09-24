@@ -1,0 +1,197 @@
+{
+  "schemaVersion": 1,
+  "source": "WS4 price catalog research 2026-09-25 (official pages + OpenRouter + LiteLLM, evidence reports/probes/)",
+  "fetchedAt": 1790288645000,
+  "currency": "USD（CNY 原生价按 1 USD = 6.722655 CNY 换算；汇率来源 open.er-api.com，2026-09-24 快照，证据 reports/probes/fx-usd.json）",
+  "subscriptionShadowMap": {
+    "workbuddy-relay": [
+      "deepseek-v4.1-flash"
+    ],
+    "antigravity": [
+      "gemini-3.8-flash-tiered",
+      "claude-sonnet-4-6"
+    ]
+  },
+  "channelUnitPricesCny": {
+    "kimi": 0.01,
+    "aliyun": 0.029,
+    "exa": 0.04706,
+    "firecrawl": 0.03361
+  },
+  "_caveats": [
+    "gemini-3.8-flash 与 gemini-3.8-flash-tiered 为 2026-12-31 前限时价（$0.75/$3.75/$0.075）；2027-01-01 起翻倍至 $1.50/$7.50/$0.15——到期需更新本快照。",
+    "deepseek-v4.1（非 flash）官方无此模型名，按 WS4 结论保持 unpriced；如所指为旗舰请改用 deepseek-v4-pro 条目计价。",
+    "tiers 内某维度为 null 表示该维度不计费（如 DeepSeek 无 cacheWrite 项），引擎按 0 处理；模型级 unpriced 的 cost 为 null 绝不计 0。",
+    "channelUnitPricesCny 仅供 ledger ¥ 折算（每渠道取默认 search 档）；无按次计价的渠道（zhipu 套餐制 / baidu 免费档 / web_search 余额制）不在此表=不计入 derivedCny。"
+  ],
+  "models": [
+    {
+      "model": "glm-5.3",
+      "provider": "zai",
+      "tiers": {
+        "input": 1.4,
+        "output": 4.4,
+        "cacheRead": 0.26,
+        "cacheWrite": 0
+      },
+      "per": "MTok",
+      "priceMode": "official",
+      "sourceUrl": "https://docs.z.ai/guides/overview/pricing",
+      "notes": "z.ai 国际站官方 USD（Latest Models 表）。CN 站 bigmodel.cn 口径：¥8/¥28/缓存命中¥2（≈$1.19/$4.16/$0.298），见 reports/probes/zhipu-pricing.md。三源一致：z.ai 官方 = OpenRouter z-ai/glm-5.3 = LiteLLM zai/glm-5.3 均为 $1.4/$4.4/$0.26。cacheWrite 官方标注 Limited-time Free（记 0）。上下文 1M，仅文本输入，reasoning 不可关闭。"
+    },
+    {
+      "model": "glm-5.3-flash",
+      "provider": "zai",
+      "tiers": {
+        "input": 0.15,
+        "output": 0.5,
+        "cacheRead": 0.03,
+        "cacheWrite": 0
+      },
+      "per": "MTok",
+      "priceMode": "official",
+      "sourceUrl": "https://docs.z.ai/guides/overview/pricing",
+      "notes": "z.ai 官方 $0.15/$0.50/cacheRead $0.03；与 LiteLLM zai/glm-5.3-flash 完全一致。⚠️ 分歧点：OpenRouter z-ai/glm-5.3-flash 上架价为 $0.045/$0.60/cacheRead $0.0285，与官方价不符（OR 侧促销/供给价，记为异常值）。CN 站 bigmodel.cn：¥0.8/¥2.8/¥0.23（≈$0.119/$0.416/$0.034）。多模态（图片/视频/文件/文本），上下文 1M。"
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "provider": "deepseek",
+      "tiers": {
+        "input": 0.2975,
+        "output": 1.19,
+        "cacheRead": 0.00595,
+        "cacheWrite": null
+      },
+      "per": "MTok",
+      "priceMode": "official",
+      "sourceUrl": "https://api-docs.deepseek.com/zh-cn/quick_start/pricing",
+      "notes": "官方 API 模型名 deepseek-flash（模型版本 DeepSeek-V4.1-Flash）。本条取【高峰档】CNY 2元/8元/0.04元（官方原生，按 6.722655 换算）。空闲档 1元/4元/0.02元 ≈ $0.1487/$0.595/$0.00297；高峰=北京时间工作日 9-12/14-18，其余空闲。口径印证：OpenRouter deepseek/deepseek-v4.1-flash $0.15/$0.60/cacheRead $0.003 恰为空闲档换算值 ✓。官方无独立 cacheWrite 计费项。上下文 1M，输出最大 384K，支持视觉。"
+    },
+    {
+      "model": "deepseek-v4.1",
+      "provider": "deepseek",
+      "tiers": {
+        "input": null,
+        "output": null,
+        "cacheRead": null,
+        "cacheWrite": null
+      },
+      "per": "MTok",
+      "priceMode": "unpriced",
+      "sourceUrl": "https://api-docs.deepseek.com/zh-cn/quick_start/pricing",
+      "notes": "【待确认】DeepSeek 官方 API 无此模型名：在售仅 deepseek-flash（=V4.1-Flash）与 deepseek-v4-pro（=V4-Pro-0813）；OpenRouter/LiteLLM 亦无独立 deepseek-v4.1 条目。若所指为 V4.1 家族旗舰，请用本目录 deepseek-v4-pro 条目计价。"
+    },
+    {
+      "model": "deepseek-v4-pro",
+      "provider": "deepseek",
+      "tiers": {
+        "input": 1.3387,
+        "output": 4.0161,
+        "cacheRead": 0.0446,
+        "cacheWrite": null
+      },
+      "per": "MTok",
+      "priceMode": "official",
+      "sourceUrl": "https://api-docs.deepseek.com/zh-cn/quick_start/pricing",
+      "notes": "官方 API 模型名 deepseek-v4-pro（版本 V4-Pro-0813）。取高峰档 CNY 9元/27元/0.30元；空闲档 4.5元/13.5元/0.15元 ≈ $0.6693/$2.0081/$0.0223。⚠️ 分歧点：OpenRouter deepseek-v4-pro $0.86/$1.72、v4-pro-0813 $0.462/$1.386 均低于官方空闲档换算值（OR 第三方托管底价口径），以官方页为准。"
+    },
+    {
+      "model": "gemini-3.8-flash",
+      "provider": "google",
+      "tiers": {
+        "input": 0.75,
+        "output": 3.75,
+        "cacheRead": 0.075,
+        "cacheWrite": null
+      },
+      "per": "MTok",
+      "priceMode": "official",
+      "sourceUrl": "https://ai.google.dev/gemini-api/docs/pricing",
+      "notes": "Standard 档，限时价至 2026-12-31；2027-01-01 起涨至 $1.50/$7.50/$0.15。缓存存储另计 $0.50/MTok/小时（2027 起 $1.00），官方无按 MTok 的 cacheWrite 单价（OpenRouter 自记 input_cache_write $0.0417 仅为其口径）。Batch/Flex = 半价（$0.375/$1.875）；Priority = $1.35/$6.75。官方页无 ≤200k/>200k 分层定价（分层仅 Pro 系有）。Grounding with Google Search：5000 次/月（Gemini 3.x 共享）免费，后 $14/1k 次。OR 与 LiteLLM gemini/gemini-3.8-flash 均 $0.75/$3.75/$0.075 三源一致 ✓。"
+    },
+    {
+      "model": "gemini-3.8-flash-tiered",
+      "provider": "google",
+      "tiers": {
+        "input": 0.75,
+        "output": 3.75,
+        "cacheRead": 0.075,
+        "cacheWrite": null
+      },
+      "per": "MTok",
+      "priceMode": "official-alias",
+      "sourceUrl": "https://ai.google.dev/gemini-api/docs/pricing",
+      "notes": "【待确认】Google 官方无名为 gemini-3.8-flash-tiered 的 SKU/定价档（3.8-flash 不做 prompt 长度分层）。本条按基础模型 Standard 价填充（DSH 配额池 antigravity 供给方使用此别名）；antigravity 实际计费口径需在 DSH 侧确认。同受 2027-01-01 涨价影响。"
+    },
+    {
+      "model": "claude-sonnet-4-6",
+      "provider": "anthropic",
+      "tiers": {
+        "input": 3,
+        "output": 15,
+        "cacheRead": 0.3,
+        "cacheWrite": 3.75
+      },
+      "per": "MTok",
+      "priceMode": "official",
+      "sourceUrl": "https://platform.claude.com/docs/en/models/sonnet-4-6/overview",
+      "notes": "官方 model id 即 claude-sonnet-4-6（连字符）。cacheWrite 取 5min TTL $3.75/MTok（1h TTL = $6）。Batch 半价。Legacy：2026-02-17 发布，退役不早于 2027-02-17；上下文 1M/输出 128K。三源一致：官方 = OpenRouter anthropic/claude-sonnet-4.6（注意 OR 用点号）= LiteLLM claude-sonnet-4-6，均 $3/$15/$0.30 ✓。"
+    },
+    {
+      "model": "hy4-preview-f",
+      "provider": "tencent",
+      "tiers": {
+        "input": null,
+        "output": null,
+        "cacheRead": null,
+        "cacheWrite": null
+      },
+      "per": "MTok",
+      "priceMode": "unpriced",
+      "sourceUrl": "https://openrouter.ai/tencent/hy4-preview",
+      "notes": "【待确认】精确名 hy4-preview-f 在 OpenRouter、LiteLLM、anysearch 网页索引三源均零命中（-f 后缀疑为 DSH/workbuddy 供给方内部变体名）。最近似公开模型 tencent/hy4-preview（腾讯混元 Hy 团队 770B MoE）：OpenRouter $0.834 in/$2.501 out/cacheRead $0.042；aihubmix 转售 $0.845/$2.535/$0.042。若确认 -f = 同模型，可按 $0.834/$2.501 估算。"
+    },
+    {
+      "model": "gpt-5.6-terra",
+      "provider": "openai",
+      "tiers": {
+        "input": 2,
+        "output": 12,
+        "cacheRead": 0.2,
+        "cacheWrite": 2.5
+      },
+      "per": "MTok",
+      "priceMode": "cross-verified",
+      "sourceUrl": "https://openrouter.ai/openai/gpt-5.6-terra",
+      "notes": "双结构化源一致：OpenRouter openai/gpt-5.6-terra = LiteLLM gpt-5.6-terra（openai 原生条目）均为 $2/$12/cacheRead $0.2/cacheWrite $2.5（$0.0025/token 写入）。OpenAI 官网定价页未抓（JS 重渲染），官方口径未直接核验。Batch 半价。"
+    },
+    {
+      "model": "gpt-5.6-luna",
+      "provider": "openai",
+      "tiers": {
+        "input": 0.2,
+        "output": 1.2,
+        "cacheRead": 0.02,
+        "cacheWrite": 0.25
+      },
+      "per": "MTok",
+      "priceMode": "cross-verified",
+      "sourceUrl": "https://openrouter.ai/openai/gpt-5.6-luna",
+      "notes": "双结构化源一致：OpenRouter = LiteLLM gpt-5.6-luna 均 $0.2/$1.2/$0.02/$0.25。同族另有 sol 档 $2/$10（OR 与 LiteLLM 亦一致）。OpenAI 官网定价页未抓。"
+    },
+    {
+      "model": "qwen-max",
+      "provider": "alibaba",
+      "tiers": {
+        "input": 1.6,
+        "output": 6.4,
+        "cacheRead": null,
+        "cacheWrite": null
+      },
+      "per": "MTok",
+      "priceMode": "single-source",
+      "sourceUrl": "https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json",
+      "notes": "【待确认】仅 LiteLLM 单数据集：dashscope/qwen-max 与 qwencloud/qwen-max（阿里国内/国际两端点）条目一致 $1.6/$6.4，但同源不构成独立验证；OpenRouter 未上架 qwen-max（仅有 qwen3.8-max 等）；阿里官方模型定价页 help.aliyun.com/zh/model-studio/model-pricing 反爬不可达（web_fetch content-type 拒绝 + Jina 422）。发布用户建议同步给 qwen3.8-max（OR $4/$12）口径说明。"
+    }
+  ]
+}
