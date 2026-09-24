@@ -1222,8 +1222,13 @@
 			];
 		}
 
+		// cordis client protocol (official decoration template): exports.inject
+		// is a capability ARRAY; apply(ctx) is the single mount function the
+		// runner calls - CSS + locale + slot registration ALL live in here.
+		const inject = ["slots", "timer", "connection", "locale"];
 		var runtimeCtx = null;
 		function apply(ctx) {
+			runtimeCtx = ctx;
 			// Standard cordis effect: setup runs now, the RETURNED function is the
 			// disposer. (Do NOT invoke the callback here — passing the disposer to
 			// ctx.effect would run tag.remove() immediately and strip the CSS,
@@ -1240,7 +1245,6 @@
 				document.head.append(lift);
 				return function () { tag.remove(); lift.remove(); };
 			});
-		}
 
 			function QuotaPanel(props) {
 				var t = props.t;
@@ -1586,8 +1590,6 @@
 				React.createElement("div", { id: "dsh-quota-card", className: settingsOpen ? "is-settings" : "" }, cardChildren));
 		}
 
-		function inject(ctx) {
-			runtimeCtx = ctx;
 			ctx.effect(function () {
 				return ctx.locale.register(NS, DICT);
 			}, "dsh-quota-panel: copy dictionaries");
