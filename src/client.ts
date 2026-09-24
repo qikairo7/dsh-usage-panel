@@ -4,9 +4,9 @@
  *
  * Registers one `shell.overlay` slot entry rendering the quota widget with
  * React: a collapsed glanceable capsule by default
- * (`● ¥58.36 · ● 45%`), expanding on click into the full card
- * (header "模型额度" + per-provider rows + progress bars). Next to the
- * refresh button, a gear button (⚙) opens the settings panel:
+ * (header "模型额度" + health dot + 用量池/余额池 sections), expanding on
+ * click into the full card (header "模型额度" + per-provider cards +
+ * progress bars). The gear button opens the settings panel:
  * per-provider visibility, refresh interval, and per-provider warn
  * thresholds — persisted to localStorage, never sent anywhere.
  *
@@ -17,9 +17,11 @@
  * host-side; threshold judgement and coloring happen here from spec hints
  * so the local settings overrides apply without a refetch.
  *
- * Styled with the Harness design tokens (`--dsw-alias-*`, `--dsw-static-*`,
- * `--dsw-shadow-*`, `--dsw-font-*`) with sensible fallbacks, so the widget
- * follows the product theme (light/dark) instead of carrying its own palette.
+ * Styled after the Arco Design (ByteDance) three-board mock
+ * (`prompts/capsule-arco-mock.html`): white solid cards, 8px card radius,
+ * 1px #E5E6EB borders, 6px progress tracks, provider pool dots. Tokens are
+ * consumed as `var(--dsw-*, Arco value)` so the harness theme can override;
+ * the settings view renders inside `#dsh-quota-card.is-settings`.
  */
 (window as any).__ModuleLoader__.load({
 	id: "dsh-quota-panel",
@@ -49,6 +51,10 @@
 		var DICT = {
 			zh: {
 				title: "模型额度",
+				settingsTitle: "设置",
+				poolUsage: "用量池",
+				poolBalance: "余额池",
+				healthCount: "{n} 家",
 				expand: "展开模型额度",
 				collapse: "收起模型额度",
 				refresh: "刷新模型额度",
@@ -139,6 +145,10 @@
 			},
 			en: {
 				title: "Model quota",
+				settingsTitle: "Settings",
+				poolUsage: "Usage pools",
+				poolBalance: "Balance pools",
+				healthCount: "{n} providers",
 				expand: "Expand model quota",
 				collapse: "Collapse model quota",
 				refresh: "Refresh model quota",
@@ -236,126 +246,150 @@
 		// React tree (event delegation intact) instead of re-mounting it.
 		var OVERLAY_LIFT_CSS = '[class*="overlayLayer"]{z-index:1150 !important;}';
 
+		// Arco Design v2 tokens (mock: prompts/capsule-arco-mock.html). Every
+		// colour is consumed as var(--dsw-*, Arco value) so the harness theme
+		// can override; scopes stay under #dsh-quota-capsule / #dsh-quota-card
+		// (the settings view renders inside #dsh-quota-card.is-settings).
 		var CSS = [
-			'#dsh-quota-panel{position:fixed;right:18px;bottom:18px;z-index:900;display:flex;flex-direction:column;align-items:flex-end;pointer-events:auto;color:var(--dsw-alias-label-primary,rgba(0,0,0,0.88));font-family:var(--dsw-font-family,-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif);font-size:13px;line-height:1.45;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}',
-			'#dsh-quota-capsule{width:384px;max-width:min(384px,calc(100vw - 36px));box-sizing:border-box;padding:16px 18px;display:flex;flex-direction:column;gap:8px;border:0.5px solid rgba(0,0,0,0.06);border-radius:24px;background:var(--dsw-apple-material-bg,rgba(255,255,255,0.72));backdrop-filter:blur(30px) saturate(180%);-webkit-backdrop-filter:blur(30px) saturate(180%);box-shadow:inset 0 0 0 0.5px var(--dsw-alias-border-specular,rgba(255,255,255,0.75)),0 16px 38px -4px rgba(0,0,0,0.08),0 4px 12px -2px rgba(0,0,0,0.04);cursor:pointer;outline:none;user-select:none;-webkit-user-select:none;touch-action:none;transform:translateY(0);transition:transform 0.12s cubic-bezier(0.2,0,0,1),background-color 0.2s cubic-bezier(0.25,1,0.5,1),box-shadow 0.2s cubic-bezier(0.25,1,0.5,1);animation:dsh-quota-capsule-enter 200ms cubic-bezier(0.16,1,0.3,1)}',
-			'#dsh-quota-capsule:hover{background:rgba(255,255,255,0.82);box-shadow:inset 0 0 0 0.5px rgba(255,255,255,0.88),0 20px 42px -4px rgba(0,0,0,0.10),0 6px 16px -2px rgba(0,0,0,0.05)}',
-			'#dsh-quota-capsule:active{transform:scale(0.98);transition-duration:0.08s}',
-			'#dsh-quota-capsule .dsh-capsule-item{padding:7px 12px;display:flex;flex-direction:column;gap:0;border-radius:14px;background:var(--dsw-apple-group-bg,rgba(255,255,255,0.55));box-shadow:inset 0 0 0 0.5px rgba(255,255,255,0.65),0 1px 2px rgba(0,0,0,0.02);position:relative;overflow:hidden;transition:background-color 0.15s ease}',
-			'#dsh-quota-capsule .dsh-capsule-item:hover{background:var(--dsw-apple-group-hover,rgba(255,255,255,0.78))}',
-			'#dsh-quota-capsule .dsh-capsule-group-title{font-size:13px;font-weight:590;letter-spacing:-0.2px;line-height:20px;color:var(--dsw-alias-label-primary,rgba(0,0,0,0.88));margin-bottom:2px;text-align:left}',
-			'#dsh-quota-capsule .dsh-capsule-main{min-height:26px;display:flex;align-items:center;gap:10px;position:relative}',
-			'#dsh-quota-capsule .dsh-capsule-main + .dsh-capsule-main::before{content:\'\';position:absolute;top:0;left:12px;right:0;height:0.5px;background:var(--dsw-alias-border-l1,rgba(60,60,67,0.12))}',
-			'#dsh-quota-capsule .dsh-capsule-main-sub{padding-left:12px}',
-			'#dsh-quota-capsule .dsh-capsule-main-sub .dsh-capsule-label{flex:0 0 76px;min-width:76px;font-size:12px;font-weight:510;color:var(--dsw-alias-label-secondary,rgba(60,60,67,0.60))}',
-			'#dsh-quota-capsule .dsh-capsule-label{flex:0 0 136px;min-width:128px;font-size:13px;font-weight:590;letter-spacing:-0.2px;color:var(--dsw-alias-label-primary,rgba(0,0,0,0.88));white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left}',
-			'#dsh-quota-capsule .dsh-capsule-bar{flex:1;height:6px;border-radius:9999px;background:var(--dsw-apple-track-bg,rgba(120,120,128,0.16));overflow:hidden;display:flex;align-items:center}',
-			'#dsh-quota-capsule .dsh-capsule-bar-fill{height:100%;border-radius:inherit;background:var(--dsw-static-green-500,#34c759);transition:width 0.3s cubic-bezier(0.25,1,0.5,1),background-color 0.2s ease}',
-			'#dsh-quota-capsule .dsh-capsule-bar-fill.state-ok{background:var(--dsw-static-green-500,#34c759)}',
-			'#dsh-quota-capsule .dsh-capsule-bar-fill.state-warn{background:var(--dsw-static-amber-500,#ff9500)}',
-			'#dsh-quota-capsule .dsh-capsule-bar-fill.state-error{background:var(--dsw-static-red-500,#ff3b30)}',
-			'#dsh-quota-capsule .dsh-capsule-bar-fill.state-info{background:var(--dsw-static-deepseek-500,#007aff)}',
+			'#dsh-quota-panel{position:fixed;right:18px;bottom:18px;z-index:900;display:flex;flex-direction:column;align-items:flex-end;pointer-events:auto;color:var(--dsw-text-title,#1D2129);font-family:var(--dsw-font-family,Inter,-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Segoe UI",Roboto,sans-serif);font-size:13px;line-height:1.45;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}',
+			'#dsh-quota-capsule .dsh-capsule-pool-dot,#dsh-quota-card .dsh-pool-dot{width:8px;height:8px;border-radius:50%;flex:none;display:inline-block}',
+			'#dsh-quota-capsule .dot-chatgpt,#dsh-quota-card .dot-chatgpt{background:var(--dsw-dot-chatgpt,#14C9C9)}',
+			'#dsh-quota-capsule .dot-zhipu,#dsh-quota-card .dot-zhipu{background:var(--dsw-dot-zhipu,#165DFF)}',
+			'#dsh-quota-capsule .dot-aggemini,#dsh-quota-card .dot-aggemini{background:var(--dsw-dot-aggemini,#722ED1)}',
+			'#dsh-quota-capsule .dot-agclaude,#dsh-quota-card .dot-agclaude{background:var(--dsw-dot-agclaude,#FF7D00)}',
+			'#dsh-quota-capsule .dot-workbuddy,#dsh-quota-card .dot-workbuddy{background:var(--dsw-dot-workbuddy,#00B42A)}',
+			'#dsh-quota-capsule .dot-deepseek,#dsh-quota-card .dot-deepseek{background:var(--dsw-dot-deepseek,#165DFF)}',
+			'#dsh-quota-capsule .dot-qoder,#dsh-quota-card .dot-qoder{background:var(--dsw-dot-qoder,#F5319D)}',
+			'#dsh-quota-capsule{width:384px;max-width:min(384px,calc(100vw - 36px));box-sizing:border-box;background:var(--dsw-surface,#FFFFFF);border:1px solid var(--dsw-border,#E5E6EB);border-radius:var(--dsw-radius-card,8px);box-shadow:var(--dsw-shadow-card,0 4px 10px rgba(0,0,0,0.1));padding:14px 16px;cursor:pointer;user-select:none;-webkit-user-select:none;touch-action:none;outline:none;color:inherit;font:inherit;text-align:left;transition:box-shadow .2s ease}',
+			'#dsh-quota-capsule:hover{box-shadow:0 6px 16px rgba(0,0,0,0.12)}',
+			'#dsh-quota-capsule:active{box-shadow:0 2px 6px rgba(0,0,0,0.08)}',
+			'#dsh-quota-capsule .dsh-capsule-header{display:flex;align-items:center;justify-content:space-between;padding-bottom:10px;border-bottom:1px solid var(--dsw-divider,#F2F3F5);margin-bottom:10px}',
+			'#dsh-quota-capsule .dsh-capsule-title{font-size:14px;font-weight:600;color:var(--dsw-text-title,#1D2129)}',
+			'#dsh-quota-capsule .dsh-capsule-health{display:inline-flex;align-items:center;gap:6px}',
+			'#dsh-quota-capsule .dsh-capsule-health-dot{width:8px;height:8px;border-radius:50%;background:var(--dsw-color-success,#00B42A);box-shadow:0 0 0 3px var(--dsw-success-bg,#E8FFEA)}',
+			'#dsh-quota-capsule .dsh-capsule-health-dot.is-warn{background:var(--dsw-color-warning,#FF7D00);box-shadow:0 0 0 3px var(--dsw-warning-bg,#FFF7E8)}',
+			'#dsh-quota-capsule .dsh-capsule-health-dot.is-error{background:var(--dsw-color-error,#F53F3F);box-shadow:0 0 0 3px var(--dsw-error-bg,#FFECE8)}',
+			'#dsh-quota-capsule .dsh-capsule-health-count{font-size:12px;color:var(--dsw-text-tertiary,#86909C)}',
+			'#dsh-quota-capsule .dsh-capsule-section{display:flex;flex-direction:column;gap:4px}',
+			'#dsh-quota-capsule .dsh-capsule-section-balance{margin-top:10px;padding-top:10px;border-top:1px solid var(--dsw-divider,#F2F3F5)}',
+			'#dsh-quota-capsule .dsh-capsule-section-label{font-size:11px;font-weight:500;letter-spacing:.08em;color:var(--dsw-text-tertiary,#86909C);padding:2px 0 4px}',
+			'#dsh-quota-capsule .dsh-capsule-item{display:flex;flex-direction:column}',
+			'#dsh-quota-capsule .dsh-capsule-item + .dsh-capsule-item{margin-top:4px}',
+			'#dsh-quota-capsule .dsh-capsule-main{display:flex;align-items:center;gap:6px;min-height:24px}',
+			'#dsh-quota-capsule .dsh-capsule-group-title{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--dsw-text-title,#1D2129);padding:2px 0 4px}',
+			'#dsh-quota-capsule .dsh-capsule-main-sub{padding-left:14px}',
+			'#dsh-quota-capsule .dsh-capsule-main-sub .dsh-capsule-label{flex:0 0 64px;font-size:12px;font-weight:400;color:var(--dsw-text-body,#4E5969)}',
+			'#dsh-quota-capsule .dsh-capsule-label{flex:0 1 auto;max-width:118px;font-size:13px;font-weight:400;color:var(--dsw-text-title,#1D2129);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+			'#dsh-quota-capsule .dsh-capsule-bar{flex:1 1 48px;min-width:48px;height:6px;border-radius:2px;background:var(--dsw-divider,#F2F3F5);overflow:hidden;display:flex;align-items:center}',
+			'#dsh-quota-capsule .dsh-capsule-bar-fill{height:100%;border-radius:2px;background:var(--dsw-color-primary,#165DFF);transition:width .3s ease}',
+			'#dsh-quota-capsule .dsh-capsule-bar-fill.state-ok{background:var(--dsw-color-success,#00B42A)}',
+			'#dsh-quota-capsule .dsh-capsule-bar-fill.state-warn{background:var(--dsw-color-warning,#FF7D00)}',
+			'#dsh-quota-capsule .dsh-capsule-bar-fill.state-error{background:var(--dsw-color-error,#F53F3F)}',
+			'#dsh-quota-capsule .dsh-capsule-bar-fill.state-info{background:var(--dsw-color-primary,#165DFF)}',
 			'#dsh-quota-capsule .dsh-capsule-spacer{flex:1;height:1px}',
-			'#dsh-quota-capsule .dsh-capsule-value{flex:0 0 92px;min-width:88px;text-align:right;font-size:12px;font-weight:590;letter-spacing:-0.15px;font-variant-numeric:tabular-nums;white-space:nowrap;color:var(--dsw-alias-label-primary,rgba(0,0,0,0.88))}',
-			'#dsh-quota-capsule .dsh-capsule-value.state-loading{color:var(--dsw-alias-label-secondary,rgba(60,60,67,0.60));font-weight:510}',
-			'#dsh-quota-capsule .dsh-capsule-value.state-warn{color:var(--dsw-static-amber-500,#ff9500)}',
-			'#dsh-quota-capsule .dsh-capsule-value.state-error{color:var(--dsw-static-red-500,#ff3b30)}',
-			'#dsh-quota-capsule .dsh-capsule-detail{align-self:flex-start;margin-top:4px;display:inline-flex;align-items:center;gap:5px;padding:2.5px 8px;border-radius:9999px;background:var(--dsw-status-warn-bg,rgba(255,149,0,0.12));color:var(--dsw-status-warn-text,#ff9500);font-size:11px;font-weight:510;letter-spacing:-0.1px;line-height:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}',
-			'#dsh-quota-capsule .dsh-capsule-detail::before{content:\'\';width:5px;height:5px;border-radius:50%;background:currentColor;flex:none}',
-			'#dsh-quota-capsule .dsh-capsule-status{font-size:11.5px;font-weight:550;color:var(--dsw-alias-label-secondary,rgba(60,60,67,0.60));white-space:nowrap;text-align:center;width:100%}',
-			'#dsh-quota-capsule .dsh-capsule-status.state-error{color:var(--dsw-static-red-500,#ff3b30)}',
-			'#dsh-quota-card{width:440px;max-width:min(440px,calc(100vw - 36px));max-height:min(840px,calc(100vh - 36px));box-sizing:border-box;padding:16px 18px;display:flex;flex-direction:column;gap:10px;overflow-y:auto;overscroll-behavior:contain;border:0.5px solid rgba(0,0,0,0.06);border-radius:24px;background:var(--dsw-apple-material-bg,rgba(255,255,255,0.72));backdrop-filter:blur(30px) saturate(180%);-webkit-backdrop-filter:blur(30px) saturate(180%);box-shadow:inset 0 0 0 0.5px var(--dsw-alias-border-specular,rgba(255,255,255,0.75)),0 16px 38px -4px rgba(0,0,0,0.08),0 4px 12px -2px rgba(0,0,0,0.04);transform-origin:bottom right;animation:dsh-quota-card-enter 220ms cubic-bezier(0.16,1,0.3,1);scrollbar-width:thin;scrollbar-color:rgba(60,60,67,0.18) transparent}',
+			'#dsh-quota-capsule .dsh-capsule-value{flex:0 0 36px;text-align:right;font-size:12px;font-weight:400;font-variant-numeric:tabular-nums;color:var(--dsw-text-title,#1D2129);white-space:nowrap}',
+			'#dsh-quota-capsule .dsh-capsule-value.state-warn{color:var(--dsw-color-warning,#FF7D00)}',
+			'#dsh-quota-capsule .dsh-capsule-value.state-error{color:var(--dsw-color-error,#F53F3F)}',
+			'#dsh-quota-capsule .dsh-capsule-time{flex:0 0 76px;text-align:right;font-size:11px;color:var(--dsw-text-tertiary,#86909C);font-variant-numeric:tabular-nums;white-space:nowrap}',
+			'#dsh-quota-capsule .dsh-capsule-tag{align-self:flex-start;margin-top:6px;padding:2px 8px;border-radius:var(--dsw-radius-component,4px);background:var(--dsw-warning-bg,#FFF7E8);color:var(--dsw-color-warning,#FF7D00);font-size:11px;line-height:16px;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}',
+			'#dsh-quota-capsule .dsh-capsule-status{display:block;margin-top:8px;font-size:12px;color:var(--dsw-text-tertiary,#86909C)}',
+			'#dsh-quota-capsule .dsh-capsule-status.state-error{color:var(--dsw-color-error,#F53F3F)}',
+			'#dsh-quota-card{width:440px;max-width:min(440px,calc(100vw - 36px));max-height:min(880px,calc(100vh - 36px));box-sizing:border-box;background:var(--dsw-surface,#FFFFFF);border:1px solid var(--dsw-border,#E5E6EB);border-radius:var(--dsw-radius-card,8px);box-shadow:var(--dsw-shadow-card,0 4px 10px rgba(0,0,0,0.1));padding:16px;display:flex;flex-direction:column;gap:10px;overflow-y:auto;overscroll-behavior:contain;transform-origin:bottom right;animation:dsh-quota-card-enter 220ms cubic-bezier(0.16,1,0.3,1);scrollbar-width:thin;scrollbar-color:var(--dsw-text-disabled,#C9CDD4) transparent}',
 			'#dsh-quota-card::-webkit-scrollbar{width:4px}',
-			'#dsh-quota-card::-webkit-scrollbar-thumb{background:rgba(60,60,67,0.2);border-radius:9999px}',
-			'#dsh-quota-card .dsh-quota-header{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-bottom:4px;cursor:grab;user-select:none;touch-action:none}',
+			'#dsh-quota-card::-webkit-scrollbar-thumb{background:var(--dsw-text-disabled,#C9CDD4);border-radius:2px}',
+			'#dsh-quota-card .dsh-quota-header{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-bottom:2px;cursor:grab;user-select:none;touch-action:none}',
 			'#dsh-quota-card .dsh-quota-header-left{display:flex;align-items:center;gap:8px;min-width:0}',
-			'#dsh-quota-card .dsh-quota-title{font-size:15px;font-weight:650;letter-spacing:-0.3px;color:#1d1d1f}',
-			'#dsh-quota-card .dsh-quota-header-badge{font-size:10.5px;font-weight:590;padding:1px 7px;border-radius:9999px;background:rgba(0,0,0,0.05);color:var(--dsw-alias-label-secondary,rgba(60,60,67,0.60));white-space:nowrap}',
-			'#dsh-quota-card .dsh-quota-actions{display:flex;align-items:center;gap:6px}',
-			'#dsh-quota-card .dsh-quota-icon{width:28px;height:28px;display:inline-grid;place-items:center;padding:0;border:0.5px solid rgba(0,0,0,0.04);border-radius:50%;background:rgba(0,0,0,0.04);color:var(--dsw-alias-label-secondary,rgba(60,60,67,0.60));font-size:13px;line-height:1;cursor:pointer;outline:none;transition:background-color 0.15s ease,transform 0.1s ease,color 0.15s ease}',
-			'#dsh-quota-card .dsh-quota-icon:hover{background:rgba(0,0,0,0.08);color:#1d1d1f}',
-			'#dsh-quota-card .dsh-quota-icon:active{transform:scale(0.92)}',
-			'#dsh-quota-card .dsh-quota-icon:disabled{cursor:default;opacity:0.4;transform:none}',
+			'#dsh-quota-card .dsh-quota-title{font-size:14px;font-weight:600;color:var(--dsw-text-title,#1D2129)}',
+			'#dsh-quota-card .dsh-quota-tag{display:inline-flex;align-items:center;height:20px;padding:0 8px;border-radius:var(--dsw-radius-component,4px);background:var(--dsw-fill-2,#F2F3F5);font-size:12px;color:var(--dsw-text-body,#4E5969);white-space:nowrap}',
+			'#dsh-quota-card .dsh-quota-actions{display:flex;align-items:center;gap:4px}',
+			'#dsh-quota-card .dsh-quota-icon{width:28px;height:28px;display:inline-grid;place-items:center;padding:0;border:none;background:transparent;border-radius:var(--dsw-radius-component,4px);color:var(--dsw-text-body,#4E5969);font:inherit;line-height:1;cursor:pointer;outline:none;transition:background-color .2s ease,color .2s ease}',
+			'#dsh-quota-card .dsh-quota-icon:hover{background:var(--dsw-fill-2,#F2F3F5);color:var(--dsw-text-title,#1D2129)}',
+			'#dsh-quota-card .dsh-quota-icon:active{background:var(--dsw-border,#E5E6EB)}',
+			'#dsh-quota-card .dsh-quota-icon:focus-visible{outline:2px solid #BEDAFF;outline-offset:1px}',
+			'#dsh-quota-card .dsh-quota-icon:disabled{cursor:default;opacity:0.4}',
 			'#dsh-quota-card .dsh-quota-icon.is-loading{animation:dsh-quota-spin 0.75s cubic-bezier(0.4,0,0.2,1) infinite}',
-			'#dsh-quota-card .dsh-quota-icon.is-active{background:rgba(0,122,255,0.15);color:var(--dsw-static-deepseek-500,#007aff)}',
+			'#dsh-quota-card .dsh-quota-icon.is-active{background:var(--dsw-fill-2,#F2F3F5);color:var(--dsw-color-primary,#165DFF)}',
+			'#dsh-quota-card .dsh-provider-card{flex:none;background:var(--dsw-surface,#FFFFFF);border:1px solid var(--dsw-border,#E5E6EB);border-radius:var(--dsw-radius-card,8px);padding:12px 14px;display:flex;flex-direction:column;gap:8px}',
+			'#dsh-quota-card .dsh-provider-card.state-warn{border-color:#FFCF8B}',
+			'#dsh-quota-card .dsh-provider-card.state-error{border-color:#FDCDC5}',
+			'#dsh-quota-card .dsh-provider-head{display:flex;align-items:center;justify-content:space-between;gap:8px}',
+			'#dsh-quota-card .dsh-provider-meta{display:flex;align-items:center;gap:8px;min-width:0}',
+			'#dsh-quota-card .dsh-provider-name{font-size:13px;font-weight:400;color:var(--dsw-text-title,#1D2129);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+			'#dsh-quota-card .dsh-provider-value{font-size:13px;font-weight:400;font-variant-numeric:tabular-nums;color:var(--dsw-text-title,#1D2129);white-space:nowrap}',
+			'#dsh-quota-card .dsh-provider-card.state-warn .dsh-provider-value{color:var(--dsw-color-warning,#FF7D00)}',
+			'#dsh-quota-card .dsh-provider-card.state-error .dsh-provider-value{color:var(--dsw-color-error,#F53F3F)}',
+			'#dsh-quota-card .dsh-window-item{display:flex;flex-direction:column;gap:6px}',
+			'#dsh-quota-card .dsh-window-item + .dsh-window-item{margin-top:2px;padding-top:8px;border-top:1px solid var(--dsw-divider,#F2F3F5)}',
+			'#dsh-quota-card .dsh-usage-row{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;color:var(--dsw-text-body,#4E5969);font-variant-numeric:tabular-nums}',
+			'#dsh-quota-card .dsh-usage-row > span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+			'#dsh-quota-card .dsh-reset-time{flex:none;font-size:12px;color:var(--dsw-text-tertiary,#86909C);font-variant-numeric:tabular-nums;white-space:nowrap}',
+			'#dsh-quota-card .dsh-progress{width:100%;height:6px;border-radius:2px;background:var(--dsw-divider,#F2F3F5);overflow:hidden}',
+			'#dsh-quota-card .dsh-progress-fill{height:100%;border-radius:2px;background:var(--dsw-color-primary,#165DFF);transition:width .3s ease}',
+			'#dsh-quota-card .dsh-progress-fill.state-ok{background:var(--dsw-color-success,#00B42A)}',
+			'#dsh-quota-card .dsh-progress-fill.state-warn{background:var(--dsw-color-warning,#FF7D00)}',
+			'#dsh-quota-card .dsh-progress-fill.state-error{background:var(--dsw-color-error,#F53F3F)}',
+			'#dsh-quota-card .dsh-provider-sub{font-size:12px;line-height:18px;color:var(--dsw-text-tertiary,#86909C)}',
+			'#dsh-quota-card .dsh-usage-caption{font-size:12px;line-height:18px;color:var(--dsw-text-tertiary,#86909C)}',
+			'#dsh-quota-card .dsh-rate-limit-alert{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:var(--dsw-radius-component,4px);background:var(--dsw-warning-bg,#FFF7E8);font-size:12px}',
+			'#dsh-quota-card .dsh-rate-limit-icon{display:inline-flex;flex:none;color:var(--dsw-color-warning,#FF7D00)}',
+			'#dsh-quota-card .dsh-rate-limit-text{flex:1;min-width:0;color:var(--dsw-text-body,#4E5969);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+			'#dsh-quota-card .dsh-rate-limit-strong{color:var(--dsw-color-warning,#FF7D00);font-weight:600}',
+			'#dsh-quota-card .dsh-rate-limit-timer{flex:none;color:var(--dsw-color-warning,#FF7D00);font-variant-numeric:tabular-nums;white-space:nowrap}',
+			'#dsh-quota-card .dsh-quota-error{color:var(--dsw-color-error,#F53F3F);font-size:12px;line-height:18px;word-break:break-all}',
+			'#dsh-quota-card .dsh-peak-badge{display:inline-flex;align-items:center;flex:none;font-size:11px;line-height:16px;padding:0 6px;border-radius:var(--dsw-radius-component,4px)}',
+			'#dsh-quota-card .dsh-peak-badge.state-peak{background:var(--dsw-warning-bg,#FFF7E8);color:var(--dsw-color-warning,#FF7D00)}',
+			'#dsh-quota-card .dsh-peak-badge.state-off{background:var(--dsw-success-bg,#E8FFEA);color:var(--dsw-color-success,#00B42A)}',
+			'#dsh-quota-card .dsh-quota-footer{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-top:10px;border-top:1px solid var(--dsw-divider,#F2F3F5);font-size:12px;color:var(--dsw-text-tertiary,#86909C)}',
+			'#dsh-quota-card .dsh-quota-footer-link{color:var(--dsw-color-primary,#165DFF);font-size:12px;cursor:pointer;text-decoration:none;white-space:nowrap;transition:color .2s ease}',
+			'#dsh-quota-card .dsh-quota-footer-link:hover{color:#4080FF}',
+			'#dsh-quota-card.is-settings{gap:0}',
+			'#dsh-quota-card .dsh-settings-nav{display:flex;align-items:center;justify-content:space-between;padding-bottom:10px;border-bottom:1px solid var(--dsw-divider,#F2F3F5);cursor:grab;user-select:none;touch-action:none}',
+			'#dsh-quota-card .dsh-settings-title{font-size:14px;font-weight:600;color:var(--dsw-text-title,#1D2129)}',
+			'#dsh-quota-card .dsh-settings-section{margin-top:16px}',
+			'#dsh-quota-card .dsh-settings-section-label{font-size:12px;color:var(--dsw-text-tertiary,#86909C);margin-bottom:8px;padding-left:2px}',
+			'#dsh-quota-card .dsh-settings-list{background:var(--dsw-surface,#FFFFFF);border:1px solid var(--dsw-border,#E5E6EB);border-radius:var(--dsw-radius-card,8px);overflow:hidden}',
+			'#dsh-quota-card .dsh-settings-row{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:40px;padding:6px 12px;font-size:13px;color:var(--dsw-text-title,#1D2129);position:relative}',
+			'#dsh-quota-card .dsh-settings-row + .dsh-settings-row::before{content:\'\';position:absolute;top:0;left:12px;right:12px;height:1px;background:var(--dsw-divider,#F2F3F5)}',
+			'#dsh-quota-card .dsh-settings-row.is-column{flex-direction:column;align-items:stretch;gap:10px;padding:10px 12px}',
+			'#dsh-quota-card .dsh-settings-name-wrap{display:flex;align-items:center;gap:8px;min-width:0;flex:1}',
+			'#dsh-quota-card .dsh-settings-name{font-size:13px;color:var(--dsw-text-title,#1D2129);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+			'#dsh-quota-card .dsh-settings-kind{flex:none;font-size:11px;line-height:16px;padding:0 6px;border-radius:var(--dsw-radius-component,4px);background:var(--dsw-fill-2,#F2F3F5);color:var(--dsw-text-tertiary,#86909C)}',
+			'#dsh-quota-card .dsh-settings-status-tag{flex:none;font-size:11px;line-height:16px;padding:0 6px;border-radius:var(--dsw-radius-component,4px);background:var(--dsw-success-bg,#E8FFEA);color:var(--dsw-color-success,#00B42A)}',
+			'#dsh-quota-card .dsh-settings-switch{position:relative;display:inline-flex;cursor:pointer;flex:none}',
+			'#dsh-quota-card .dsh-settings-switch input{position:absolute;opacity:0;width:0;height:0;margin:0}',
+			'#dsh-quota-card .dsh-settings-switch-track{display:block;width:34px;height:18px;border-radius:999px;background:var(--dsw-text-disabled,#C9CDD4);position:relative;transition:background-color .2s ease}',
+			'#dsh-quota-card .dsh-settings-switch-track::after{content:\'\';position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--dsw-surface,#FFFFFF);box-shadow:0 1px 2px rgba(0,0,0,0.2);transition:transform .2s ease}',
+			'#dsh-quota-card .dsh-settings-switch input:checked + .dsh-settings-switch-track{background:var(--dsw-color-primary,#165DFF)}',
+			'#dsh-quota-card .dsh-settings-switch input:checked + .dsh-settings-switch-track::after{transform:translateX(16px)}',
+			'#dsh-quota-card .dsh-settings-switch input:focus-visible + .dsh-settings-switch-track{box-shadow:0 0 0 2px #BEDAFF}',
+			'#dsh-quota-card .dsh-settings-input,#dsh-quota-card .dsh-settings-select{height:28px;padding:0 8px;border:1px solid var(--dsw-border,#E5E6EB);border-radius:var(--dsw-radius-component,4px);background:var(--dsw-surface,#FFFFFF);color:var(--dsw-text-title,#1D2129);font-family:inherit;font-size:12px;outline:none;transition:border-color .2s ease}',
+			'#dsh-quota-card .dsh-settings-input:focus,#dsh-quota-card .dsh-settings-select:focus{border-color:var(--dsw-color-primary,#165DFF)}',
+			'#dsh-quota-card .dsh-settings-number{width:92px;text-align:right;font-variant-numeric:tabular-nums}',
+			'#dsh-quota-card .dsh-settings-proxy{width:164px;font-size:12px}',
+			'#dsh-quota-card .dsh-settings-select{width:132px;appearance:none;-webkit-appearance:none;padding-right:26px;background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'12\' height=\'12\' viewBox=\'0 0 48 48\' fill=\'none\'%3E%3Cpath d=\'M14 20l10 10 10-10\' stroke=\'%2386909C\' stroke-width=\'4\' stroke-linecap=\'round\' stroke-linejoin=\'round\'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 8px center}',
+			'#dsh-quota-card .dsh-settings-radio-group{display:flex;align-items:center;gap:16px;flex-wrap:wrap}',
+			'#dsh-quota-card .dsh-settings-radio{display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--dsw-text-body,#4E5969);position:relative}',
+			'#dsh-quota-card .dsh-settings-radio input{position:absolute;opacity:0;width:0;height:0;margin:0}',
+			'#dsh-quota-card .dsh-settings-radio-box{width:14px;height:14px;border-radius:50%;border:1px solid var(--dsw-text-disabled,#C9CDD4);background:var(--dsw-surface,#FFFFFF);position:relative;transition:border-color .2s ease}',
+			'#dsh-quota-card .dsh-settings-radio input:checked + .dsh-settings-radio-box{border-color:var(--dsw-color-primary,#165DFF)}',
+			'#dsh-quota-card .dsh-settings-radio input:checked + .dsh-settings-radio-box::after{content:\'\';position:absolute;inset:0;margin:auto;width:6px;height:6px;border-radius:50%;background:var(--dsw-color-primary,#165DFF)}',
+			'#dsh-quota-card .dsh-settings-btn-secondary{height:26px;padding:0 10px;border:none;border-radius:var(--dsw-radius-component,4px);background:var(--dsw-fill-2,#F2F3F5);color:var(--dsw-text-body,#4E5969);font-family:inherit;font-size:12px;cursor:pointer;flex:none;transition:background-color .2s ease}',
+			'#dsh-quota-card .dsh-settings-btn-secondary:hover{background:var(--dsw-border,#E5E6EB)}',
+			'#dsh-quota-card .dsh-settings-btn-secondary:disabled{opacity:0.4;cursor:default}',
+			'#dsh-quota-card .dsh-device-code-box{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:8px;padding:10px 12px;background:var(--dsw-fill,#F7F8FA);border:1px solid var(--dsw-border,#E5E6EB);border-radius:var(--dsw-radius-component,4px)}',
+			'#dsh-quota-card .dsh-device-code-label{font-size:12px;color:var(--dsw-text-tertiary,#86909C);flex:none}',
+			'#dsh-quota-card .dsh-device-code{font-family:var(--dsw-font-mono,ui-monospace,SFMono-Regular,Menlo,Consolas,"Courier New",monospace);font-size:15px;font-weight:600;letter-spacing:2px;color:var(--dsw-text-title,#1D2129);font-variant-numeric:tabular-nums}',
+			'#dsh-quota-card .dsh-device-code-hint{font-size:11px;line-height:16px;color:var(--dsw-text-tertiary,#86909C);margin-top:6px;padding:0 2px}',
+			'#dsh-quota-card .dsh-settings-actions{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:18px;padding-top:12px;border-top:1px solid var(--dsw-divider,#F2F3F5)}',
+			'#dsh-quota-card .dsh-settings-hint{font-size:12px;color:var(--dsw-text-tertiary,#86909C)}',
+			'#dsh-quota-card .dsh-chatgpt-url a{color:var(--dsw-color-primary,#165DFF);font-size:12px;line-height:18px;word-break:break-all;text-decoration:none}',
+			'#dsh-quota-card .dsh-chatgpt-url a:hover{color:#4080FF}',
+			'#dsh-quota-card .dsh-settings-btn-danger{height:30px;padding:0 14px;border:none;border-radius:var(--dsw-radius-component,4px);background:var(--dsw-color-error,#F53F3F);color:#FFF;font-family:inherit;font-size:13px;cursor:pointer;flex:none;transition:background-color .2s ease}',
+			'#dsh-quota-card .dsh-settings-btn-danger:hover{background:#F76560}',
+			'#dsh-quota-card .dsh-settings-btn-danger:active{background:#CB2634}',
 			'@keyframes dsh-quota-spin{to{transform:rotate(360deg)}}',
 			'@keyframes dsh-quota-card-enter{from{opacity:0;transform:scale(0.96) translateY(6px)}to{opacity:1;transform:scale(1) translateY(0)}}',
-			'@keyframes dsh-quota-capsule-enter{from{opacity:0;transform:scale(0.97)}to{opacity:1;transform:scale(1)}}',
-			'#dsh-quota-card .dsh-provider{flex:none;padding:10px 14px;display:flex;flex-direction:column;gap:6px;border-radius:14px;background:var(--dsw-apple-group-bg,rgba(255,255,255,0.55));box-shadow:inset 0 0 0 0.5px rgba(255,255,255,0.65),0 1px 2px rgba(0,0,0,0.02);position:relative;overflow:hidden}',
-			'#dsh-quota-card .dsh-provider-head{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:22px}',
-			'#dsh-quota-card .dsh-provider-meta{display:flex;align-items:center;gap:8px;min-width:0}',
-			'#dsh-quota-card .dsh-status-dot{flex:none;width:7px;height:7px;border-radius:50%;background:var(--dsw-static-green-500,#34c759);box-shadow:0 0 0 2px rgba(52,199,89,0.2)}',
-			'#dsh-quota-card .state-loading .dsh-status-dot{background:#adb2b8;box-shadow:0 0 0 2px rgba(173,178,184,0.15)}',
-			'#dsh-quota-card .dsh-provider.state-warn .dsh-status-dot{background:var(--dsw-static-amber-500,#ff9500);box-shadow:0 0 0 2px rgba(255,149,0,0.25)}',
-			'#dsh-quota-card .dsh-provider.state-error .dsh-status-dot{background:var(--dsw-static-red-500,#ff3b30);box-shadow:0 0 0 2px rgba(255,59,48,0.25)}',
-			'#dsh-quota-card .dsh-provider.state-info .dsh-status-dot{background:var(--dsw-static-deepseek-500,#007aff);box-shadow:0 0 0 2px rgba(0,122,255,0.2)}',
-			'#dsh-quota-card .dsh-provider-name{font-size:13px;font-weight:590;letter-spacing:-0.2px;color:var(--dsw-alias-label-primary,rgba(0,0,0,0.88));overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
-			'#dsh-quota-card .dsh-peak-badge{display:inline-flex;align-items:center;flex:none;font-size:10px;line-height:14px;font-weight:510;padding:1px 6px;border-radius:9999px;letter-spacing:0}',
-			'#dsh-quota-card .dsh-peak-badge.state-peak{background:var(--dsw-status-warn-bg,rgba(255,149,0,0.12));color:var(--dsw-status-warn-text,#ff9500)}',
-			'#dsh-quota-card .dsh-peak-badge.state-off{background:var(--dsw-status-success-bg,rgba(52,199,89,0.12));color:var(--dsw-status-success-text,#34c759)}',
-			'#dsh-quota-card .dsh-provider-value{flex:none;font-size:13px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-0.2px;color:var(--dsw-alias-label-primary,rgba(0,0,0,0.88))}',
-			'#dsh-quota-card .dsh-provider.state-warn .dsh-provider-value{color:var(--dsw-static-amber-500,#ff9500)}',
-			'#dsh-quota-card .dsh-provider.state-error .dsh-provider-value{color:var(--dsw-static-red-500,#ff3b30)}',
-			'#dsh-quota-card .dsh-window-item{display:flex;flex-direction:column;gap:4px;padding-top:4px;position:relative}',
-			'#dsh-quota-card .dsh-window-item + .dsh-window-item{margin-top:4px;padding-top:6px;border-top:0.5px solid var(--dsw-alias-border-l1,rgba(60,60,67,0.12))}',
-			'#dsh-quota-card .dsh-usage-row{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:11.5px;color:var(--dsw-alias-label-secondary,rgba(60,60,67,0.60));font-variant-numeric:tabular-nums}',
-			'#dsh-quota-card .dsh-progress{width:100%;height:6px;border-radius:9999px;background:var(--dsw-apple-track-bg,rgba(120,120,128,0.16));overflow:hidden}',
-			'#dsh-quota-card .dsh-progress-fill{height:100%;width:0;border-radius:inherit;background:var(--dsw-static-deepseek-500,#007aff);transition:width 0.3s cubic-bezier(0.25,1,0.5,1)}',
-			'#dsh-quota-card .dsh-progress-fill.state-warn{background:var(--dsw-static-amber-500,#ff9500)}',
-			'#dsh-quota-card .dsh-progress-fill.state-error{background:var(--dsw-static-red-500,#ff3b30)}',
-			'#dsh-quota-card .dsh-usage-caption{font-size:11px;line-height:15px;color:var(--dsw-alias-label-tertiary,rgba(60,60,67,0.38))}',
-			'#dsh-quota-card .dsh-provider-sub{font-size:11.5px;line-height:16px;color:var(--dsw-alias-label-secondary,rgba(60,60,67,0.60))}',
-			'#dsh-quota-card .dsh-rate-limit-card{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 10px;border-radius:8px;background:var(--dsw-status-warn-bg,rgba(255,149,0,0.12));color:var(--dsw-status-warn-text,#ff9500);font-size:11px;font-weight:510;margin-top:2px}',
-			'#dsh-quota-card .dsh-rate-limit-badge{display:inline-flex;align-items:center;gap:4px;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis}',
-			'#dsh-quota-card .dsh-rate-limit-timer{font-variant-numeric:tabular-nums;font-weight:600;flex:none}',
-			'#dsh-quota-card .dsh-quota-error{color:var(--dsw-static-red-500,#ff3b30);font-size:12px;line-height:17px;word-break:break-all}',
-			'#dsh-quota-card .dsh-quota-footer{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 4px 2px;margin-top:2px;border-top:0.5px solid var(--dsw-alias-border-l1,rgba(60,60,67,0.12));font-size:11px;color:var(--dsw-alias-label-tertiary,rgba(60,60,67,0.38))}',
-			'#dsh-quota-card .dsh-quota-footer-link{color:var(--dsw-static-deepseek-500,#007aff);cursor:pointer;text-decoration:none;font-weight:510;display:inline-flex;align-items:center;gap:3px}',
-			'#dsh-quota-card .dsh-quota-footer-link:hover{text-decoration:underline}',
-			'#dsh-quota-panel .dsh-quota-settings{display:flex;flex-direction:column;gap:16px;max-height:min(760px,calc(100vh - 120px));overflow-y:auto;overflow-x:hidden;padding-right:2px;animation:dsh-quota-settings-fade 180ms cubic-bezier(0.16,1,0.3,1);scrollbar-width:thin;scrollbar-color:rgba(60,60,67,0.18) transparent}',
-			'#dsh-quota-panel .dsh-quota-settings::-webkit-scrollbar{width:4px}',
-			'#dsh-quota-panel .dsh-quota-settings::-webkit-scrollbar-thumb{background:rgba(60,60,67,0.2);border-radius:9999px}',
-			'@keyframes dsh-quota-settings-fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}',
-			'#dsh-quota-panel .dsh-setting-section{display:flex;flex-direction:column;gap:6px}',
-			'#dsh-quota-panel .dsh-setting-title{font-size:11px;font-weight:600;letter-spacing:0.02em;text-transform:uppercase;color:var(--dsw-alias-label-secondary,rgba(60,60,67,0.60));padding-left:6px}',
-			'#dsh-quota-panel .dsh-setting-group{background:var(--dsw-apple-group-bg,rgba(255,255,255,0.55));border-radius:14px;box-shadow:inset 0 0 0 0.5px rgba(255,255,255,0.65),0 1px 2px rgba(0,0,0,0.02);position:relative;overflow:hidden}',
-			'#dsh-quota-panel .dsh-setting-row{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:38px;padding:8px 12px;font-size:13px;color:var(--dsw-alias-label-primary,rgba(0,0,0,0.88));position:relative}',
-			'#dsh-quota-panel .dsh-setting-row + .dsh-setting-row::before{content:\'\';position:absolute;top:0;left:12px;right:0;height:0.5px;background:var(--dsw-alias-border-l1,rgba(60,60,67,0.12))}',
-			'#dsh-quota-panel .dsh-setting-name-wrap{display:flex;align-items:center;gap:8px;min-width:0;flex:1}',
-			'#dsh-quota-panel .dsh-setting-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;font-weight:510}',
-			'#dsh-quota-panel .dsh-setting-badge{font-size:10px;font-weight:590;line-height:14px;padding:1px 6px;border-radius:4px;flex:none}',
-			'#dsh-quota-panel .dsh-setting-badge-usage{background:var(--dsw-status-info-bg,rgba(0,122,255,0.10));color:var(--dsw-status-info-text,#007aff)}',
-			'#dsh-quota-panel .dsh-setting-badge-balance{background:var(--dsw-status-success-bg,rgba(52,199,89,0.12));color:var(--dsw-status-success-text,#34c759)}',
-			'#dsh-quota-panel .dsh-setting-badge-info{background:rgba(0,0,0,0.05);color:var(--dsw-alias-label-secondary,rgba(60,60,67,0.60))}',
-			'#dsh-quota-panel .dsh-setting-toggle{position:relative;display:inline-flex;align-items:center;cursor:pointer;user-select:none;flex:none}',
-			'#dsh-quota-panel .dsh-setting-toggle-input{position:absolute;opacity:0;width:0;height:0;margin:0;pointer-events:none}',
-			'#dsh-quota-panel .dsh-setting-toggle-track{display:block;width:38px;height:22px;border-radius:9999px;background:rgba(120,120,128,0.22);position:relative;transition:background-color 0.25s cubic-bezier(0.25,1,0.5,1)}',
-			'#dsh-quota-panel .dsh-setting-toggle-thumb{position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#ffffff;box-shadow:0 2px 4px rgba(0,0,0,0.18),0 0.5px 1px rgba(0,0,0,0.08);transition:transform 0.25s cubic-bezier(0.25,1,0.5,1),width 0.15s ease}',
-			'#dsh-quota-panel .dsh-setting-toggle-input:checked + .dsh-setting-toggle-track{background:var(--dsw-static-green-500,#34c759)}',
-			'#dsh-quota-panel .dsh-setting-toggle-input:checked + .dsh-setting-toggle-track .dsh-setting-toggle-thumb{transform:translateX(16px)}',
-			'#dsh-quota-panel .dsh-setting-toggle:active .dsh-setting-toggle-thumb{width:21px}',
-			'#dsh-quota-panel .dsh-setting-toggle-input:focus-visible + .dsh-setting-toggle-track{box-shadow:0 0 0 2px rgba(0,122,255,0.35)}',
-			'#dsh-quota-panel .dsh-setting-segmented{display:flex;align-items:center;width:100%;padding:2.5px;border-radius:9px;background:var(--dsw-apple-seg-bg,rgba(120,120,128,0.12));gap:2px}',
-			'#dsh-quota-panel .dsh-setting-seg-btn{flex:1;padding:5px 2px;border:none;border-radius:7px;background:transparent;color:var(--dsw-alias-label-secondary,rgba(60,60,67,0.60));font:inherit;font-size:11.5px;font-weight:510;line-height:16px;text-align:center;cursor:pointer;outline:none;white-space:nowrap;user-select:none;transition:background-color 0.18s ease,color 0.15s ease,box-shadow 0.18s ease}',
-			'#dsh-quota-panel .dsh-setting-seg-btn:hover{color:var(--dsw-alias-label-primary,rgba(0,0,0,0.88))}',
-			'#dsh-quota-panel .dsh-setting-seg-btn.is-active{background:#ffffff;color:#1d1d1f;font-weight:600;box-shadow:0 1px 4px rgba(0,0,0,0.10),0 0.5px 1px rgba(0,0,0,0.06)}',
-			'#dsh-quota-panel .dsh-setting-seg-btn:focus-visible{box-shadow:0 0 0 2px rgba(0,122,255,0.35)}',
-			'#dsh-quota-panel .dsh-setting-input,#dsh-quota-panel .dsh-setting-select{padding:5px 9px;border-radius:8px;border:0.5px solid rgba(0,0,0,0.10);background:rgba(255,255,255,0.85);color:var(--dsw-alias-label-primary,rgba(0,0,0,0.88));font:inherit;font-size:12px;line-height:16px;outline:none;transition:border-color 0.15s ease,box-shadow 0.15s ease}',
-			'#dsh-quota-panel .dsh-setting-input:focus,#dsh-quota-panel .dsh-setting-select:focus{border-color:var(--dsw-static-deepseek-500,#007aff);box-shadow:0 0 0 2.5px rgba(0,122,255,0.18)}',
-			'#dsh-quota-panel .dsh-setting-number{width:96px;text-align:right;font-variant-numeric:tabular-nums}',
-			'#dsh-quota-panel .dsh-setting-proxy{width:164px;font-size:11.5px}',
-			'#dsh-quota-panel .dsh-setting-reset{padding:5px 12px;border-radius:8px;border:none;background:var(--dsw-status-info-bg,rgba(0,122,255,0.10));color:var(--dsw-static-deepseek-500,#007aff);font:inherit;font-size:12px;font-weight:590;cursor:pointer;outline:none;transition:background-color 0.15s ease,transform 0.1s ease,opacity 0.15s ease}',
-			'#dsh-quota-panel .dsh-setting-reset:hover{background:rgba(0,122,255,0.16)}',
-			'#dsh-quota-panel .dsh-setting-reset:active{transform:scale(0.96)}',
-			'#dsh-quota-panel .dsh-setting-reset:disabled{opacity:0.4;cursor:default;transform:none}',
-			'#dsh-quota-panel .dsh-setting-sub-section{margin-top:10px;padding-top:10px;border-top:0.5px dashed var(--dsw-alias-border-l1,rgba(60,60,67,0.12))}',
-			'#dsh-quota-panel .dsh-setting-hint{font-size:11px;line-height:15px;color:var(--dsw-alias-label-tertiary,rgba(60,60,67,0.38));padding:2px 6px}',
-			'#dsh-quota-panel .dsh-setting-actions{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 4px 0;border-top:0.5px solid var(--dsw-alias-border-l1,rgba(60,60,67,0.12))}',
-			'#dsh-quota-panel .dsh-chatgpt-url a{color:var(--dsw-static-deepseek-500,#007aff);font-size:11px;word-break:break-all;text-decoration:none}',
-			'#dsh-quota-panel .dsh-chatgpt-url a:hover{text-decoration:underline}',
-			'#dsh-quota-panel .dsh-chatgpt-code-box{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 12px;border-radius:9px;background:rgba(0,0,0,0.03);border:0.5px solid rgba(0,0,0,0.06)}',
-			'#dsh-quota-panel .dsh-chatgpt-code{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:16px;font-weight:700;letter-spacing:2px;color:#1d1d1f}',
-			'@media (prefers-reduced-motion: reduce){#dsh-quota-capsule{animation:none;transition:none}#dsh-quota-capsule:active{transform:none}#dsh-quota-capsule .dsh-capsule-item{transition:none}#dsh-quota-capsule .dsh-capsule-bar-fill{transition:none}#dsh-quota-card{animation:none;transition:none}#dsh-quota-card .dsh-progress-fill{transition:none}#dsh-quota-card .dsh-quota-icon{transition:none}#dsh-quota-panel .dsh-quota-settings{animation:none}#dsh-quota-panel .dsh-setting-toggle-track{transition:none}#dsh-quota-panel .dsh-setting-toggle-thumb{transition:none}#dsh-quota-panel .dsh-setting-toggle:active .dsh-setting-toggle-thumb{width:18px}#dsh-quota-panel .dsh-setting-seg-btn{transition:none}#dsh-quota-panel .dsh-setting-reset{transition:none}}'
+			'@media (prefers-reduced-motion: reduce){#dsh-quota-capsule,#dsh-quota-card,#dsh-quota-capsule .dsh-capsule-bar-fill,#dsh-quota-card .dsh-progress-fill,#dsh-quota-card .dsh-quota-icon,#dsh-quota-card .dsh-quota-icon.is-loading,#dsh-quota-card .dsh-quota-footer-link,#dsh-quota-card .dsh-settings-switch-track,#dsh-quota-card .dsh-settings-switch-track::after,#dsh-quota-card .dsh-settings-radio-box,#dsh-quota-card .dsh-settings-input,#dsh-quota-card .dsh-settings-select,#dsh-quota-card .dsh-settings-btn-secondary,#dsh-quota-card .dsh-settings-btn-danger{transition:none;animation:none}}'
 		].join("\n");
 
 		var CAPSULE_CHOICES = [
@@ -374,6 +408,46 @@
 		// Collapsed-capsule sub-row labels carry the full window name.
 		var WIN_FULL_LABELS = { "5h": "5小时额度", "周": "周额度", "月": "月额度" };
 		var winFullLabel = function (label) { return WIN_FULL_LABELS[label] || label || "?"; };
+
+		// Provider pool dot colour (Arco token per the design mock), keyed by
+		// spec id. An unmapped id THROWS: a new host provider must be added
+		// here explicitly, never silently uncoloured.
+		var POOL_DOT_BY_ID = {
+			"chatgpt": "dot-chatgpt",
+			"zai-coding-cn": "dot-zhipu",
+			"antigravity-gemini": "dot-aggemini",
+			"antigravity-claude": "dot-agclaude",
+			"workbuddy-cn": "dot-workbuddy",
+			"workbuddy-global": "dot-workbuddy",
+			"deepseek": "dot-deepseek",
+			"qoder": "dot-qoder"
+		};
+		function poolDotClass(id) {
+			var cls = POOL_DOT_BY_ID[id];
+			if (!cls) throw new Error("dsh-quota-panel: no pool dot colour mapped for provider id: " + id);
+			return cls;
+		}
+
+		// Collapsed-capsule sections (design mock): usage pools on top, the
+		// balance pools below the divider. Ids outside this list render in
+		// the balance section (and throw on the dot lookup above).
+		var USAGE_POOL_IDS = { "chatgpt": true, "zai-coding-cn": true, "antigravity-gemini": true, "antigravity-claude": true };
+
+		// Inline SVG icons (Arco outline style; stroke follows text colour).
+		var ICON_REFRESH = React.createElement("svg", { width: "15", height: "15", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round" },
+			React.createElement("path", { d: "M21 12a9 9 0 1 1-2.64-6.36" }),
+			React.createElement("polyline", { points: "21 3 21 9 15 9" }));
+		var ICON_GEAR = React.createElement("svg", { width: "15", height: "15", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round" },
+			React.createElement("circle", { cx: "12", cy: "12", r: "3" }),
+			React.createElement("path", { d: "M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" }));
+		var ICON_COLLAPSE = React.createElement("svg", { width: "14", height: "14", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round" },
+			React.createElement("polyline", { points: "6 15 12 9 18 15" }));
+		var ICON_CLOSE = React.createElement("svg", { width: "14", height: "14", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round" },
+			React.createElement("path", { d: "M5 5l14 14M19 5L5 19" }));
+		var ICON_RATE_LIMIT = React.createElement("svg", { width: "14", height: "14", viewBox: "0 0 48 48", fill: "none" },
+			React.createElement("path", { d: "M23.62 6.59a.9.9 0 0 0-1.56 0L4.13 38.53a.9.9 0 0 0 .78 1.35h38.18a.9.9 0 0 0 .78-1.35L23.62 6.59z", fill: "currentColor", opacity: ".18" }),
+			React.createElement("path", { d: "M24 18v12", stroke: "currentColor", strokeWidth: "4", strokeLinecap: "round" }),
+			React.createElement("circle", { cx: "24", cy: "37", r: "2.5", fill: "currentColor" }));
 
 		function readSettings() {
 			var base = { hidden: {}, refreshMs: null, warn: {}, proxy: {}, capsuleMode: null, position: null, holidays: "" };
@@ -673,12 +747,72 @@
 			return { inPeak: inPeak, kind: kind };
 		}
 
+		/**
+		 * One collapsed-capsule item (Arco mock): a single-window provider
+		 * renders one dot+name row; a multi-window usage provider renders a
+		 * group title (dot + name) plus one indented row per carried window;
+		 * balance rows show a spacer instead of a bar. The 429 soft-rate
+		 * badge renders as the mock's warning tag under the row(s).
+		 */
+		function capsuleItem(spec, view, warnOverride) {
+			var dotCls = poolDotClass(spec.id);
+			var mainRow = function (key, isSub, labelText, pct, status, valueText, timeText) {
+				var rowKids = [];
+				if (!isSub) rowKids.push(React.createElement("span", { key: "dot", className: "dsh-capsule-pool-dot " + dotCls }));
+				rowKids.push(React.createElement("span", { key: "label", className: "dsh-capsule-label", title: labelText }, labelText));
+				if (pct !== null && typeof pct === "number" && Number.isFinite(pct)) {
+					rowKids.push(React.createElement("span", { key: "bar", className: "dsh-capsule-bar" },
+						React.createElement("span", {
+							className: "dsh-capsule-bar-fill state-" + (status || "ok"),
+							style: { width: Math.min(Math.max(pct, 0), 100) + "%" }
+						})));
+				} else {
+					rowKids.push(React.createElement("span", { key: "spacer", className: "dsh-capsule-spacer" }));
+				}
+				rowKids.push(React.createElement("span", {
+					key: "value",
+					className: "dsh-capsule-value" + (status === "warn" || status === "error" ? " state-" + status : "")
+				}, valueText));
+				if (timeText) rowKids.push(React.createElement("span", { key: "time", className: "dsh-capsule-time" }, "(" + timeText + ")"));
+				return React.createElement("div", { key: key, className: "dsh-capsule-main" + (isSub ? " dsh-capsule-main-sub" : "") }, rowKids);
+			};
+			var kids = [];
+			var winList = view.kind === "usage" && Array.isArray(view.windowsList) ? view.windowsList : [];
+			// Usage providers ALL use the same group structure (title + window
+			// sub-rows), single-window ones included, so ChatGPT (weekly only)
+			// renders identically to the 5h+weekly pools — one visual grammar.
+			if (winList.length >= 1) {
+				var warnPct = typeof warnOverride === "number" && Number.isFinite(warnOverride) && warnOverride >= 0 ? warnOverride : (spec.warnPercent || 70);
+				var errPct = Math.max(spec.errorPercent || 90, warnPct + 1);
+				kids.push(React.createElement("div", { key: spec.id + "-gtitle", className: "dsh-capsule-group-title" },
+					React.createElement("span", { className: "dsh-capsule-pool-dot " + dotCls }),
+					spec.label));
+				for (var wi = 0; wi < winList.length; wi++) {
+					var wrow = winList[wi];
+					var wst = wrow.percent >= errPct ? "error" : wrow.percent >= warnPct ? "warn" : "ok";
+					kids.push(mainRow(spec.id + "-w" + wi, true,
+						winFullLabel(wrow.label),
+						wrow.percent, wst,
+						wrow.percent === null ? "—" : wrow.percent + "%",
+						wrow.resetsAt ? fmtShortReset(wrow.resetsAt) : ""));
+				}
+			} else {
+				kids.push(mainRow(spec.id + "-main", false, spec.label,
+					view.kind === "usage" && typeof view.barPercent === "number" && Number.isFinite(view.barPercent) ? view.barPercent : null,
+					view.status, view.summary || "—", ""));
+			}
+			if (view.kind === "balance" && view.rateLimited && view.sub) {
+				kids.push(React.createElement("div", { key: "tag", className: "dsh-capsule-tag", title: view.sub }, view.sub));
+			}
+			return React.createElement("div", { key: spec.id + "-item", className: "dsh-capsule-item", title: view.title || "" }, kids);
+		}
+
 		function ProviderRow(props) {
 			var spec = props.spec;
 			var view = props.view;
 			var t = props.t;
 			var meta = [
-				React.createElement("span", { key: "dot", className: "dsh-status-dot" }),
+				React.createElement("span", { key: "dot", className: "dsh-pool-dot " + poolDotClass(spec.id) }),
 				React.createElement("span", { key: "name", className: "dsh-provider-name" }, spec.label)
 			];
 			var peak = t ? peakStatus(spec.id, props.holidays) : null;
@@ -703,21 +837,25 @@
 					var wpct = typeof wrow.percent === "number" && Number.isFinite(wrow.percent) ? Math.min(Math.max(wrow.percent, 0), 100) : 0;
 					var wst = wrow.percent === null ? view.status : wrow.percent >= pcts.error ? "error" : wrow.percent >= pcts.warn ? "warn" : "ok";
 					var itemKids = [React.createElement("div", { key: "row", className: "dsh-usage-row" },
-						React.createElement("span", null, winFullLabel(wrow.label) + " · " + (wrow.percent === null ? "—" : wrow.percent + "%")),
-						wrow.resetsAt ? React.createElement("span", null, t("nextReset", { time: fmtShortReset(wrow.resetsAt) || fmtNextReset(t, wrow.resetsAt) })) : null)];
+						React.createElement("span", null, winFullLabel(wrow.label) + ": " + (wrow.percent === null ? "—" : wrow.percent + "%")),
+						wrow.resetsAt ? React.createElement("span", { className: "dsh-reset-time" }, t("nextReset", { time: fmtShortReset(wrow.resetsAt) || fmtNextReset(t, wrow.resetsAt) })) : null)];
 					itemKids.push(React.createElement("div", { key: "track", className: "dsh-progress" },
 						React.createElement("div", { className: "dsh-progress-fill state-" + wst, style: { width: wpct + "%" } })));
 					body.push(React.createElement("div", { key: "w" + wi, className: "dsh-window-item" }, itemKids));
 				}
 				if (view.caption) body.push(React.createElement("div", { key: "cap", className: "dsh-usage-caption" }, view.caption));
 			} else if (view.rateLimited && view.sub) {
-				// Soft-rate (429) window: an amber card beats the plain sub line.
-				body.push(React.createElement("div", { key: "rate", className: "dsh-rate-limit-card" },
-					React.createElement("span", { className: "dsh-rate-limit-badge" }, view.sub)));
+				// Soft-rate (429) window: the mock's warning Alert (icon +
+				// text). view.sub is one host-composed string, so it stays a
+				// single strong segment — no data-logic split here.
+				body.push(React.createElement("div", { key: "rate", className: "dsh-rate-limit-alert" },
+					React.createElement("span", { className: "dsh-rate-limit-icon" }, ICON_RATE_LIMIT),
+					React.createElement("span", { className: "dsh-rate-limit-text" },
+						React.createElement("span", { className: "dsh-rate-limit-strong" }, view.sub))));
 			} else if (view.sub) {
 				body.push(React.createElement("div", { key: "sub", className: "dsh-provider-sub" }, view.sub));
 			}
-			return React.createElement("div", { className: "dsh-provider state-" + view.status, title: view.title }, body);
+			return React.createElement("div", { className: "dsh-provider-card state-" + view.status, title: view.title }, body);
 		}
 
 		/**
@@ -819,51 +957,62 @@
 			var login = status && status.login;
 			var inFlight = busy || (login && login.active);
 			var children = [];
+			var extras = [];
 			if (status && status.loggedIn && !(login && login.active)) {
-				children.push(React.createElement("div", { key: "in", className: "dsh-setting-hint" },
-					t("chatgptLoggedIn", { source: sourceLabel(status.source) })
-						+ (status.plan_type ? " · " + t("chatgptPlan", { plan: status.plan_type }) : "")));
-				children.push(React.createElement("button", {
-					key: "out", className: "dsh-setting-reset", type: "button", onClick: logout
-				}, t("chatgptLogout")));
+				children.push(React.createElement("div", { key: "in", className: "dsh-settings-row" },
+					React.createElement("div", { className: "dsh-settings-name-wrap" },
+						React.createElement("span", { className: "dsh-pool-dot " + poolDotClass("chatgpt") }),
+						React.createElement("span", { className: "dsh-settings-name" }, t("chatgptAccount"))),
+					React.createElement("span", { className: "dsh-settings-status-tag" }, t("chatgptLoggedIn", { source: sourceLabel(status.source) })),
+					React.createElement("button", { className: "dsh-settings-btn-secondary", type: "button", onClick: logout }, t("chatgptLogout"))));
+				if (status.plan_type) {
+					extras.push(React.createElement("div", { key: "plan", className: "dsh-device-code-hint" }, t("chatgptPlan", { plan: status.plan_type })));
+				}
 			} else if (inFlight && login && login.userCode) {
-				children.push(React.createElement("div", { key: "s1", className: "dsh-setting-hint" }, t("chatgptLoginStep1")));
-				children.push(React.createElement("div", { key: "url", className: "dsh-chatgpt-url" },
+				// Device-code flow (mock device-code-box): hint / URL / one-time
+				// code + copy / waiting / cancel, stacked below the section list.
+				extras.push(React.createElement("div", { key: "s1", className: "dsh-device-code-hint" }, t("chatgptLoginStep1")));
+				extras.push(React.createElement("div", { key: "url", className: "dsh-chatgpt-url" },
 					React.createElement("a", { href: login.verificationUrl, target: "_blank", rel: "noreferrer" }, login.verificationUrl)));
-				children.push(React.createElement("div", { key: "s2", className: "dsh-setting-hint", style: { marginTop: "6px" } }, t("chatgptLoginStep2")));
-				children.push(React.createElement("div", { key: "code", className: "dsh-chatgpt-code-box" },
-					React.createElement("span", { className: "dsh-chatgpt-code" }, login.userCode),
+				extras.push(React.createElement("div", { key: "s2", className: "dsh-device-code-hint" }, t("chatgptLoginStep2")));
+				extras.push(React.createElement("div", { key: "code", className: "dsh-device-code-box" },
+					React.createElement("span", { className: "dsh-device-code" }, login.userCode),
 					React.createElement("button", {
-						className: "dsh-setting-reset", type: "button", onClick: function () { copyCode(login.userCode); }
+						className: "dsh-settings-btn-secondary", type: "button",
+						onClick: function () { copyCode(login.userCode); }
 					}, copied ? t("chatgptCopied") : t("chatgptCopy"))));
-				children.push(React.createElement("div", { key: "wait", className: "dsh-setting-hint", style: { marginTop: "6px" } }, t("chatgptWaiting")));
-				children.push(React.createElement("button", {
-					key: "cancel", className: "dsh-setting-reset", type: "button", style: { marginTop: "6px" }, onClick: cancelLogin
+				extras.push(React.createElement("div", { key: "wait", className: "dsh-device-code-hint" }, t("chatgptWaiting")));
+				extras.push(React.createElement("button", {
+					key: "cancel", className: "dsh-settings-btn-secondary", type: "button",
+					style: { marginTop: "6px" }, onClick: cancelLogin
 				}, t("chatgptCancel")));
 			} else {
-				children.push(React.createElement("div", { key: "hint", className: "dsh-setting-hint" }, t("chatgptLoginHint")));
+				children.push(React.createElement("div", { key: "out", className: "dsh-settings-row" },
+					React.createElement("div", { className: "dsh-settings-name-wrap" },
+						React.createElement("span", { className: "dsh-pool-dot " + poolDotClass("chatgpt") }),
+						React.createElement("span", { className: "dsh-settings-name" }, t("chatgptAccount"))),
+					React.createElement("button", { className: "dsh-settings-btn-secondary", type: "button", disabled: busy, onClick: startLogin }, t("chatgptLogin"))));
+				extras.push(React.createElement("div", { key: "hint", className: "dsh-device-code-hint" }, t("chatgptLoginHint")));
 				if (errorMsg) {
-					children.push(React.createElement("div", { key: "err", className: "dsh-setting-hint", style: { color: "#e5484d" } },
+					extras.push(React.createElement("div", { key: "err", className: "dsh-device-code-hint", style: { color: "var(--dsw-color-error,#F53F3F)" } },
 						t("chatgptLoginFailed", { msg: errorMsg })));
 				}
-				children.push(React.createElement("button", {
-					key: "in", className: "dsh-setting-reset", type: "button", disabled: busy, onClick: startLogin
-				}, t("chatgptLogin")));
 			}
-			return React.createElement("div", { className: "dsh-setting-sub-section" },
-				React.createElement("div", { className: "dsh-setting-title" }, t("chatgptAccount")),
-				React.createElement("div", { className: "dsh-setting-row dsh-chatgpt-row", style: { flexDirection: "column", alignItems: "stretch", gap: "6px" } },
-					children),
-				React.createElement("div", { className: "dsh-setting-row dsh-setting-row-interactive", style: { marginTop: "4px" } },
-					React.createElement("label", { className: "dsh-setting-name" }, t("chatgptProxy")),
-					React.createElement("input", {
-						className: "dsh-setting-input dsh-setting-proxy",
-						type: "text",
-						value: cgProxy,
-						placeholder: t("chatgptProxyDirect"),
-						onChange: function (e) { setProxy(e.target.value); }
-					})),
-				React.createElement("div", { className: "dsh-setting-hint" }, t("chatgptProxyHint")));
+			return React.createElement("div", { className: "dsh-settings-section" },
+				React.createElement("div", { className: "dsh-settings-section-label" }, t("chatgptAccount")),
+				children.length ? React.createElement("div", { className: "dsh-settings-list" }, children) : null,
+				extras,
+				React.createElement("div", { className: "dsh-settings-list", style: { marginTop: "8px" } },
+					React.createElement("div", { className: "dsh-settings-row" },
+						React.createElement("label", { className: "dsh-settings-name" }, t("chatgptProxy")),
+						React.createElement("input", {
+							className: "dsh-settings-input dsh-settings-proxy",
+							type: "text",
+							value: cgProxy,
+							placeholder: t("chatgptProxyDirect"),
+							onChange: function (e) { setProxy(e.target.value); }
+						}))),
+				React.createElement("div", { className: "dsh-device-code-hint" }, t("chatgptProxyHint")));
 		}
 
 		function SettingsPanel(props) {
@@ -871,6 +1020,9 @@
 			var settings = props.settings;
 			var onChange = props.onChange;
 			var onReset = props.onReset;
+			var onClose = props.onClose;
+			var dragHandlers = props.dragHandlers;
+			var headerDrag = props.headerDrag;
 			var t = props.t;
 			var call = props.call;
 
@@ -910,12 +1062,15 @@
 			var setHolidays = function (text) {
 				onChange(Object.assign({}, settings, { holidays: text }));
 			};
-			var holidaysSection = React.createElement("div", { className: "dsh-setting-section" },
-				React.createElement("div", { className: "dsh-setting-title" }, t("holidaysTitle")),
-				React.createElement("div", { className: "dsh-setting-group" },
-					React.createElement("div", { className: "dsh-setting-row dsh-setting-row-interactive", style: { flexDirection: "column", alignItems: "stretch", gap: "4px" } },
-						React.createElement("input", { className: "dsh-setting-input", type: "text", placeholder: "2026-10-01,2026-10-02", value: settings.holidays || "", onChange: function (e) { setHolidays(e.target.value); } }),
-						React.createElement("div", { className: "dsh-setting-hint" }, t("holidaysHint")))));
+			var sectionLabel = function (key) {
+				return React.createElement("div", { className: "dsh-settings-section-label" }, t(key));
+			};
+			var holidaysSection = React.createElement("div", { key: "sec-holidays", className: "dsh-settings-section" },
+				sectionLabel("holidaysTitle"),
+				React.createElement("div", { className: "dsh-settings-list" },
+					React.createElement("div", { className: "dsh-settings-row is-column" },
+						React.createElement("input", { className: "dsh-settings-input", type: "text", placeholder: "2026-10-01,2026-10-02", value: settings.holidays || "", onChange: function (e) { setHolidays(e.target.value); } }),
+						React.createElement("div", { className: "dsh-settings-hint" }, t("holidaysHint")))));
 
 			var refreshValue = "";
 			if (settings.refreshMs !== null && settings.refreshMs !== undefined) {
@@ -925,19 +1080,18 @@
 
 			var visibilityRows = specs.rows.map(function (spec) {
 				var badgeText = spec.kind === "usage" ? t("badgeUsage") : (spec.kind === "balance" ? t("badgeBalance") : t("badgeInfo"));
-				return React.createElement("div", { key: spec.id, className: "dsh-setting-row dsh-setting-row-interactive" },
-					React.createElement("div", { className: "dsh-setting-name-wrap" },
-						React.createElement("span", { className: "dsh-setting-name", title: spec.label }, spec.label),
-						React.createElement("span", { className: "dsh-setting-badge dsh-setting-badge-" + spec.kind }, badgeText)),
-					React.createElement("label", { className: "dsh-setting-toggle", title: spec.label },
+				return React.createElement("div", { key: spec.id, className: "dsh-settings-row" },
+					React.createElement("div", { className: "dsh-settings-name-wrap" },
+						React.createElement("span", { className: "dsh-pool-dot " + poolDotClass(spec.id) }),
+						React.createElement("span", { className: "dsh-settings-name", title: spec.label }, spec.label),
+						React.createElement("span", { className: "dsh-settings-kind" }, badgeText)),
+					React.createElement("label", { className: "dsh-settings-switch", title: spec.label },
 						React.createElement("input", {
-							className: "dsh-setting-toggle-input",
 							type: "checkbox",
 							checked: !settings.hidden[spec.id],
 							onChange: function () { toggle(spec.id); }
 						}),
-						React.createElement("span", { className: "dsh-setting-toggle-track" },
-							React.createElement("span", { className: "dsh-setting-toggle-thumb" }))));
+						React.createElement("span", { className: "dsh-settings-switch-track" })));
 			});
 
 			var thresholdRows = specs.rows.map(function (spec) {
@@ -947,12 +1101,13 @@
 					? t("warnPercentPH", { n: (spec.warnPercent || 70) })
 					: t("warnBalancePH", { cur: (spec.currency || "¥"), n: ((spec.balanceTiers && spec.balanceTiers.warn) || 20) });
 				var raw = settings.warn[spec.id];
-				return React.createElement("div", { key: spec.id, className: "dsh-setting-row dsh-setting-row-interactive" },
-					React.createElement("div", { className: "dsh-setting-name-wrap" },
-						React.createElement("span", { className: "dsh-setting-name", title: spec.label }, spec.label),
-						React.createElement("span", { className: "dsh-setting-badge dsh-setting-badge-" + spec.kind }, isUsage ? "%" : (spec.currency || "¥"))),
+				return React.createElement("div", { key: spec.id, className: "dsh-settings-row" },
+					React.createElement("div", { className: "dsh-settings-name-wrap" },
+						React.createElement("span", { className: "dsh-pool-dot " + poolDotClass(spec.id) }),
+						React.createElement("span", { className: "dsh-settings-name", title: spec.label }, spec.label),
+						React.createElement("span", { className: "dsh-settings-kind" }, isUsage ? "%" : (spec.currency || "¥"))),
 					React.createElement("input", {
-						className: "dsh-setting-input dsh-setting-number",
+						className: "dsh-settings-input dsh-settings-number",
 						type: "number",
 						min: "0",
 						placeholder: placeholder,
@@ -966,10 +1121,10 @@
 				var placeholder = spec.proxy
 					? t("proxyConfigured", { name: spec.proxy })
 					: t("proxyDirect");
-				return React.createElement("div", { key: spec.id, className: "dsh-setting-row dsh-setting-row-interactive" },
-					React.createElement("span", { className: "dsh-setting-name", title: spec.label }, spec.label),
+				return React.createElement("div", { key: spec.id, className: "dsh-settings-row" },
+					React.createElement("span", { className: "dsh-settings-name", title: spec.label }, spec.label),
 					React.createElement("input", {
-						className: "dsh-setting-input dsh-setting-proxy",
+						className: "dsh-settings-input dsh-settings-proxy",
 						type: "text",
 						placeholder: placeholder,
 						value: raw,
@@ -977,18 +1132,30 @@
 					}));
 			});
 
-			return React.createElement("div", { className: "dsh-quota-settings" },
-				React.createElement("div", { className: "dsh-setting-section" },
-					React.createElement("div", { className: "dsh-setting-title" }, t("settingsProviders")),
-					visibilityRows.length ? React.createElement("div", { className: "dsh-setting-group" }, visibilityRows) : React.createElement("div", { className: "dsh-setting-hint" }, t("settingsNoProviders"))),
+			// Mock board 03: the settings view renders as direct children of
+			// #dsh-quota-card.is-settings — a nav row (title + close), then
+			// List sections, then the footer actions row.
+			return [
+				React.createElement("div", Object.assign({}, dragHandlers, { onPointerDown: headerDrag, key: "nav", className: "dsh-settings-nav" }),
+					React.createElement("span", { className: "dsh-settings-title" }, t("settingsTitle")),
+					React.createElement("button", {
+						className: "dsh-quota-icon",
+						type: "button",
+						title: t("closeSettings"),
+						"aria-label": t("closeSettings"),
+						onClick: onClose
+					}, ICON_CLOSE)),
+				React.createElement("div", { key: "sec-providers", className: "dsh-settings-section" },
+					sectionLabel("settingsProviders"),
+					visibilityRows.length ? React.createElement("div", { className: "dsh-settings-list" }, visibilityRows) : React.createElement("div", { className: "dsh-settings-hint" }, t("settingsNoProviders"))),
 				holidaysSection,
-				React.createElement("div", { className: "dsh-setting-section" },
-					React.createElement("div", { className: "dsh-setting-title" }, t("settingsInterval")),
-					React.createElement("div", { className: "dsh-setting-group" },
-						React.createElement("div", { className: "dsh-setting-row" },
-							React.createElement("span", { className: "dsh-setting-name" }, t("settingsAutoRefresh")),
+				React.createElement("div", { key: "sec-refresh", className: "dsh-settings-section" },
+					sectionLabel("settingsInterval"),
+					React.createElement("div", { className: "dsh-settings-list" },
+						React.createElement("div", { className: "dsh-settings-row" },
+							React.createElement("span", { className: "dsh-settings-name" }, t("settingsAutoRefresh")),
 							React.createElement("select", {
-								className: "dsh-setting-select",
+								className: "dsh-settings-select",
 								value: refreshValue,
 								onChange: function (event) { setRefresh(event.target.value); }
 							}, REFRESH_CHOICES.map(function (choice) {
@@ -998,11 +1165,9 @@
 								if (choice.value === "300000") label = t("minutesSuffix", { n: 5 });
 								return React.createElement("option", { key: choice.value || "follow", value: choice.value }, label);
 							}))),
-						React.createElement("div", { className: "dsh-setting-row", style: { flexDirection: "column", alignItems: "stretch", gap: "8px" } },
-							React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "baseline" } },
-								React.createElement("span", { className: "dsh-setting-name" }, t("capsuleName")),
-								React.createElement("span", { className: "dsh-setting-hint", style: { padding: "0" } }, (settings.capsuleMode || "auto") === "auto" ? t("capsuleAuto") : (settings.capsuleMode === "rolling" ? t("capsuleRolling") : (settings.capsuleMode === "weekly" ? t("capsuleWeekly") : t("capsuleMax"))))),
-							React.createElement("div", { className: "dsh-setting-segmented", role: "radiogroup", "aria-label": t("capsuleName") },
+						React.createElement("div", { className: "dsh-settings-row is-column" },
+							React.createElement("span", { className: "dsh-settings-name" }, t("capsuleName")),
+							React.createElement("div", { className: "dsh-settings-radio-group", role: "radiogroup", "aria-label": t("capsuleName") },
 								CAPSULE_CHOICES.map(function (choice) {
 									var active = (settings.capsuleMode || "auto") === choice.value;
 									var shortKey = choice.value === "auto" ? "capsuleAutoShort"
@@ -1013,38 +1178,39 @@
 										: choice.value === "rolling" ? "capsuleRolling"
 										: choice.value === "weekly" ? "capsuleWeekly"
 										: "capsuleMax";
-									return React.createElement("button", {
-										key: choice.value,
-										type: "button",
-										role: "radio",
-										"aria-checked": active ? "true" : "false",
-										title: t(fullKey),
-										className: "dsh-setting-seg-btn" + (active ? " is-active" : ""),
-										onClick: function () { setCapsule(choice.value); }
-									}, t(shortKey));
+									return React.createElement("label", { key: choice.value, className: "dsh-settings-radio", title: t(fullKey) },
+										React.createElement("input", {
+											type: "radio",
+											name: "dsh-capsule-mode",
+											checked: active,
+											onChange: function () { setCapsule(choice.value); }
+										}),
+										React.createElement("span", { className: "dsh-settings-radio-box" }),
+										t(shortKey));
 								}))))),
-				React.createElement("div", { className: "dsh-setting-section" },
-					React.createElement("div", { className: "dsh-setting-title" }, t("settingsThresholds")),
-					thresholdRows.filter(Boolean).length ? React.createElement("div", { className: "dsh-setting-group" }, thresholdRows) : null),
-				React.createElement("div", { className: "dsh-setting-section" },
-					React.createElement("div", { className: "dsh-setting-title" }, t("settingsAdvanced")),
-					React.createElement("div", { className: "dsh-setting-group" },
-						React.createElement("div", { className: "dsh-setting-row dsh-setting-row-interactive" },
-							React.createElement("span", { className: "dsh-setting-name" }, t("panelPosition")),
+				React.createElement("div", { key: "sec-thresholds", className: "dsh-settings-section" },
+					sectionLabel("settingsThresholds"),
+					thresholdRows.filter(Boolean).length ? React.createElement("div", { className: "dsh-settings-list" }, thresholdRows) : null),
+				React.createElement("div", { key: "sec-advanced", className: "dsh-settings-section" },
+					sectionLabel("settingsAdvanced"),
+					React.createElement("div", { className: "dsh-settings-list" },
+						React.createElement("div", { className: "dsh-settings-row" },
+							React.createElement("span", { className: "dsh-settings-name" }, t("panelPosition")),
 							React.createElement("button", {
-								className: "dsh-setting-reset",
+								className: "dsh-settings-btn-secondary",
 								type: "button",
 								onClick: resetPosition,
 								disabled: !settings.position
 							}, settings.position ? t("resetPosition") : t("defaultPosition")))),
-					React.createElement("div", { className: "dsh-setting-sub-section" },
-						React.createElement("div", { className: "dsh-setting-title" }, t("settingsProxy")),
-						React.createElement("div", { className: "dsh-setting-hint", style: { marginBottom: "4px" } }, t("proxyHint")),
-						proxyRows.length ? React.createElement("div", { className: "dsh-setting-group" }, proxyRows) : null),
+					React.createElement("div", { key: "sec-proxy", className: "dsh-settings-section" },
+						sectionLabel("settingsProxy"),
+						React.createElement("div", { className: "dsh-settings-hint", style: { marginBottom: "4px" } }, t("proxyHint")),
+						proxyRows.length ? React.createElement("div", { className: "dsh-settings-list" }, proxyRows) : null),
 					React.createElement(ChatGPTAccount, { key: "chatgpt", t: t, call: call, settings: settings, onChange: onChange })),
-				React.createElement("div", { className: "dsh-setting-actions" },
-					React.createElement("span", { className: "dsh-setting-hint" }, t("localOnly")),
-					React.createElement("button", { className: "dsh-setting-reset", type: "button", onClick: onReset }, t("resetDefaults"))));
+				React.createElement("div", { key: "actions", className: "dsh-settings-actions" },
+					React.createElement("span", { className: "dsh-settings-hint" }, t("localOnly")),
+					React.createElement("button", { className: "dsh-settings-btn-danger", type: "button", onClick: onReset }, t("resetDefaults")))
+			];
 		}
 
 		const inject = ["slots", "timer", "connection", "locale"];
@@ -1261,202 +1427,155 @@
 				}
 
 				if (!expanded) {
-					var pairs = [];
-					var ariaLabel = t("expand");
-					if (specs === null && loadError !== null) {
-						pairs.push(React.createElement("span", { key: "err", className: "dsh-capsule-status state-error" }, "—"));
-						ariaLabel = t("expand") + ": " + String(loadError);
-					} else if (rows.length === 0) {
-						pairs.push(React.createElement("span", { key: "none", className: "dsh-capsule-status state-loading" }, t("allHidden")));
-						ariaLabel = t("allHidden") + " · " + t("expand");
-					} else {
-						// Fixed id order (design spec): a stable glance beats a
-						// status-driven re-sort that jumps rows between refreshes.
-						var sortedRows = rows.slice().sort(function (a, b) {
-							var ia = FIXED_ORDER.indexOf(a.id);
-							if (ia < 0) ia = FIXED_ORDER.length;
-							var ib = FIXED_ORDER.indexOf(b.id);
-							if (ib < 0) ib = FIXED_ORDER.length;
-							return ia - ib;
-						});
-
-						for (var j = 0; j < sortedRows.length; j++) {
-							var rspec = sortedRows[j];
-							var rview = views[rspec.id] || {};
-							var pct = typeof rview.barPercent === "number" && Number.isFinite(rview.barPercent)
-								? Math.min(Math.max(rview.barPercent, 0), 100)
-								: 0;
-							var renderCapsuleRow = function (rowKey, rowName, rowPct, rowStatus, rowValue, isSub) {
-								var kids = [
-									React.createElement("span", {
-										key: "name",
-										className: "dsh-capsule-label",
-										title: isSub ? rowName : rspec.label
-									}, rowName)
-								];
-								if (rowPct !== null) {
-									kids.push(React.createElement("span", { key: "bar", className: "dsh-capsule-bar" },
-										React.createElement("span", {
-											className: "dsh-capsule-bar-fill state-" + (rowStatus || "ok"),
-											style: { width: Math.min(Math.max(rowPct, 0), 100) + "%" }
-										})
-									));
-								} else {
-									kids.push(React.createElement("span", { key: "spacer", className: "dsh-capsule-spacer" }));
-								}
-								kids.push(React.createElement("span", {
-									key: "value",
-									className: "dsh-capsule-value state-" + (rowStatus || "ok")
-								}, rowValue));
-								return React.createElement("div", {
-									key: rspec.id + "-" + rowKey,
-									className: "dsh-capsule-main" + (isSub ? " dsh-capsule-main-sub" : "")
-								}, kids);
-							};
-							// Grouped card (design spec): a usage provider with
-							// several carried windows gets a group-title header
-							// plus one indented row per window, each labelled
-							// with the FULL window name (5小时额度 / 周额度 /
-							// 月额度); single-window usage keeps one full-name
-							// row with its reset time inline.
-							var itemRows = [];
-							var winList = rview.kind === "usage" && Array.isArray(rview.windowsList) ? rview.windowsList : [];
-							if (winList.length > 1) {
-								var warnPct = typeof settings.warn[rspec.id] === "number" && Number.isFinite(settings.warn[rspec.id]) && settings.warn[rspec.id] >= 0 ? settings.warn[rspec.id] : (rspec.warnPercent || 70);
-								var errPct = Math.max(rspec.errorPercent || 90, warnPct + 1);
-								itemRows.push(React.createElement("div", {
-									key: rspec.id + "-gtitle",
-									className: "dsh-capsule-group-title"
-								}, rspec.label));
-								for (var wi = 0; wi < winList.length; wi++) {
-									var wrow = winList[wi];
-									var wst = wrow.percent >= errPct ? "error" : wrow.percent >= warnPct ? "warn" : "ok";
-									var wshort = wrow.resetsAt ? fmtShortReset(wrow.resetsAt) : "";
-									itemRows.push(renderCapsuleRow("w" + wi,
-										winFullLabel(wrow.label),
-										wrow.percent, wst,
-										(wrow.percent === null ? "—" : wrow.percent + "%") + (wshort ? " (" + wshort + ")" : ""),
-										true));
-								}
-							} else if (winList.length === 1) {
-								var s0 = winList[0];
-								var sshort = s0.resetsAt ? fmtShortReset(s0.resetsAt) : "";
-								itemRows.push(renderCapsuleRow("main", rspec.label, s0.percent, rview.status,
-									(s0.percent === null ? "—" : s0.percent + "%") + (sshort ? " (" + sshort + ")" : ""), false));
-							} else {
-								itemRows.push(renderCapsuleRow("main", rspec.label, rview.kind === "usage" ? pct : null, rview.status, rview.summary || "—", false));
-							}
-
-							var itemChildren = itemRows;
-							var detailText = null;
-							if (rview.kind === "balance" && rview.rateLimited && rview.sub) {
-								detailText = rview.sub;
-							}
-							if (detailText) {
-								itemChildren.push(React.createElement("div", {
-									key: "detail",
-									className: "dsh-capsule-detail",
-									title: detailText
-								}, detailText));
-							}
-							pairs.push(React.createElement("div", {
-								key: rspec.id + "-item",
-								className: "dsh-capsule-item",
-								title: rview.title || ""
-							}, itemChildren));
-						}
-						var ariaParts = [];
-						for (var a = 0; a < rows.length; a++) {
-							var arspec = rows[a];
-							var aview = views[arspec.id];
-							var aname = arspec.label || arspec.short;
-							var asummary = aview ? aview.summary : "";
-							ariaParts.push(aname + " " + asummary);
-						}
-						ariaLabel = ariaParts.join("，") + " · " + t("expand");
-					}
-					return React.createElement("div", { id: "dsh-quota-panel", style: panelStyle },
-						React.createElement("button", Object.assign({}, dragHandlers, {
-							id: "dsh-quota-capsule",
-							type: "button",
-							"aria-label": ariaLabel,
-							"aria-expanded": "false",
-							onClick: function () {
-								if (suppressClickRef.current) { suppressClickRef.current = false; return; }
-								setExpanded(true);
-							}
-						}), pairs));
+				var ariaLabel = t("expand");
+				// Header health dot (design mock): any error row -> red, else
+				// any warn row -> orange, else green; the count is the number
+				// of visible providers.
+				var anyError = false;
+				var anyWarn = false;
+				for (var hi = 0; hi < rows.length; hi++) {
+					var hv = views[rows[hi].id];
+					if (!hv) continue;
+					if (hv.status === "error") anyError = true;
+					else if (hv.status === "warn") anyWarn = true;
 				}
-
-				var bodyChildren = [];
-				if (settingsOpen) {
-					bodyChildren.push(React.createElement(SettingsPanel, {
-						key: "settings",
-						t: t,
-						call: call,
-						specs: specs,
-						settings: settings,
-						onChange: updateSettings,
-						onReset: function () { updateSettings({ hidden: {}, refreshMs: null, warn: {}, proxy: {}, capsuleMode: null, position: null }); }
-					}));
-				} else if (loadError !== null) {
-					bodyChildren.push(React.createElement("div", { key: "err", className: "dsh-quota-error" }, String(loadError)));
+				var pairs = [React.createElement("div", { key: "header", className: "dsh-capsule-header" },
+					React.createElement("span", { className: "dsh-capsule-title" }, t("title")),
+					React.createElement("span", { className: "dsh-capsule-health" },
+						React.createElement("span", { className: "dsh-capsule-health-dot" + (anyError ? " is-error" : anyWarn ? " is-warn" : "") }),
+						React.createElement("span", { className: "dsh-capsule-health-count" }, t("healthCount", { n: rows.length }))))];
+				if (specs === null && loadError !== null) {
+					pairs.push(React.createElement("div", { key: "sec-err", className: "dsh-capsule-section" },
+						React.createElement("span", { className: "dsh-capsule-status state-error" }, "—")));
+					ariaLabel = t("expand") + ": " + String(loadError);
 				} else if (rows.length === 0) {
-					bodyChildren.push(React.createElement("div", { key: "empty", className: "dsh-provider-sub" }, t("emptyHint")));
+					pairs.push(React.createElement("div", { key: "sec-none", className: "dsh-capsule-section" },
+						React.createElement("span", { className: "dsh-capsule-status" }, t("allHidden"))));
+					ariaLabel = t("allHidden") + " · " + t("expand");
+				} else {
+					// Fixed id order (design spec): a stable glance beats a
+					// status-driven re-sort that jumps rows between refreshes.
+					var sortedRows = rows.slice().sort(function (a, b) {
+						var ia = FIXED_ORDER.indexOf(a.id);
+						if (ia < 0) ia = FIXED_ORDER.length;
+						var ib = FIXED_ORDER.indexOf(b.id);
+						if (ib < 0) ib = FIXED_ORDER.length;
+						return ia - ib;
+					});
+					// Two mock sections: usage pools on top, balance pools
+					// below the divider. An id outside both lists lands in the
+					// balance section and throws on the dot lookup — never
+					// silently dropped.
+					var usageKids = [];
+					var balanceKids = [];
+					for (var j = 0; j < sortedRows.length; j++) {
+						var rspec = sortedRows[j];
+						var itemEl = capsuleItem(rspec, views[rspec.id] || {}, settings.warn[rspec.id]);
+						if (USAGE_POOL_IDS[rspec.id]) usageKids.push(itemEl);
+						else balanceKids.push(itemEl);
+					}
+					pairs.push(React.createElement("div", { key: "sec-usage", className: "dsh-capsule-section" },
+						React.createElement("div", { className: "dsh-capsule-section-label" }, t("poolUsage")),
+						usageKids));
+					pairs.push(React.createElement("div", { key: "sec-balance", className: "dsh-capsule-section dsh-capsule-section-balance" },
+						React.createElement("div", { className: "dsh-capsule-section-label" }, t("poolBalance")),
+						balanceKids));
+					var ariaParts = [];
+					for (var a = 0; a < rows.length; a++) {
+						var arspec = rows[a];
+						var aview = views[arspec.id];
+						var aname = arspec.label || arspec.short;
+						var asummary = aview ? aview.summary : "";
+						ariaParts.push(aname + " " + asummary);
+					}
+					ariaLabel = ariaParts.join("，") + " · " + t("expand");
+				}
+				return React.createElement("div", { id: "dsh-quota-panel", style: panelStyle },
+					React.createElement("button", Object.assign({}, dragHandlers, {
+						id: "dsh-quota-capsule",
+						type: "button",
+						"aria-label": ariaLabel,
+						"aria-expanded": "false",
+						onClick: function () {
+							if (suppressClickRef.current) { suppressClickRef.current = false; return; }
+							setExpanded(true);
+						}
+					}), pairs));
+			}
+
+				var cardChildren = [];
+			if (settingsOpen) {
+				// Mock board 03: the settings view replaces the card content
+				// entirely (nav + sections + actions, no standard header).
+				cardChildren = SettingsPanel({
+					key: "settings",
+					t: t,
+					call: call,
+					specs: specs,
+					settings: settings,
+					onChange: updateSettings,
+					onReset: function () { updateSettings({ hidden: {}, refreshMs: null, warn: {}, proxy: {}, capsuleMode: null, position: null }); },
+					onClose: function () { setSettingsOpen(false); },
+					dragHandlers: dragHandlers,
+					headerDrag: headerDrag
+				});
+			} else {
+				var connectedTotal = rows.filter(function (r) {
+					var v = views[r.id];
+					return v && v.status !== "error";
+				}).length;
+				cardChildren.push(React.createElement("div", Object.assign({}, dragHandlers, { onPointerDown: headerDrag, key: "header", className: "dsh-quota-header" }),
+					React.createElement("div", { className: "dsh-quota-header-left" },
+						React.createElement("span", { className: "dsh-quota-title" }, t("title")),
+						React.createElement("span", { className: "dsh-quota-tag" }, t("connectedBadge", { n: connectedTotal }))),
+					React.createElement("div", { className: "dsh-quota-actions" },
+						React.createElement("button", {
+							className: "dsh-quota-icon" + (refreshing ? " is-loading" : ""),
+							type: "button",
+							title: t("refresh"),
+							"aria-label": t("refresh"),
+							disabled: refreshing,
+							onClick: function () { refreshAll(); }
+						}, ICON_REFRESH),
+						React.createElement("button", {
+							className: "dsh-quota-icon",
+							type: "button",
+							title: t("openSettings"),
+							"aria-label": t("openSettings"),
+							"aria-expanded": "false",
+							onClick: function () { setSettingsOpen(true); }
+						}, ICON_GEAR),
+						React.createElement("button", {
+							className: "dsh-quota-icon",
+							type: "button",
+							title: t("collapse"),
+							"aria-label": t("collapse"),
+							onClick: function () { setExpanded(false); }
+						}, ICON_COLLAPSE))));
+				if (loadError !== null) {
+					cardChildren.push(React.createElement("div", { key: "err", className: "dsh-quota-error" }, String(loadError)));
+				} else if (rows.length === 0) {
+					cardChildren.push(React.createElement("div", { key: "empty", className: "dsh-provider-sub" }, t("emptyHint")));
 				} else {
 					// Grouped provider cards isolate themselves; no divider
 					// elements between rows any more.
 					for (var k = 0; k < rows.length; k++) {
-						bodyChildren.push(React.createElement(ProviderRow, { key: rows[k].id, spec: rows[k], view: views[rows[k].id], t: t, holidays: settings.holidays, warn: settings.warn[rows[k].id] }));
+						cardChildren.push(React.createElement(ProviderRow, { key: rows[k].id, spec: rows[k], view: views[rows[k].id], t: t, holidays: settings.holidays, warn: settings.warn[rows[k].id] }));
 					}
-					var connected = rows.filter(function (r) {
-						var v = views[r.id];
-						return v && v.status !== "error";
-					}).length;
-					bodyChildren.push(React.createElement("div", { key: "footer", className: "dsh-quota-footer" },
+					cardChildren.push(React.createElement("div", { key: "footer", className: "dsh-quota-footer" },
 						React.createElement("span", null,
 							(fetchedAt !== null ? t("updatedAt", { time: new Date(fetchedAt).toLocaleTimeString() }) + " · " : "")
 							+ t("footerRefresh", { n: Math.round(effectiveMs / 1000) })),
 						React.createElement("a", {
 							className: "dsh-quota-footer-link",
 							onClick: function () { setSettingsOpen(true); }
-						}, t("footerSettings") + " ⚙")));
+						}, t("footerSettings"))));
 				}
-
-				var connectedTotal = rows.filter(function (r) {
-					var v = views[r.id];
-					return v && v.status !== "error";
-				}).length;
-
-				return React.createElement("div", { id: "dsh-quota-panel", style: panelStyle },
-					React.createElement("div", { id: "dsh-quota-card" },
-						React.createElement("div", Object.assign({}, dragHandlers, { onPointerDown: headerDrag, className: "dsh-quota-header" }),
-							React.createElement("div", { className: "dsh-quota-header-left" },
-								React.createElement("span", { className: "dsh-quota-title" }, t("title")),
-								React.createElement("span", { className: "dsh-quota-header-badge" }, t("connectedBadge", { n: connectedTotal }))),
-							React.createElement("div", { className: "dsh-quota-actions" },
-								React.createElement("button", {
-									className: "dsh-quota-icon" + (refreshing ? " is-loading" : ""),
-									type: "button",
-									"aria-label": t("refresh"),
-									disabled: refreshing,
-									onClick: function () { refreshAll(); }
-								}, "↻"),
-								React.createElement("button", {
-									className: "dsh-quota-icon" + (settingsOpen ? " is-active" : ""),
-									type: "button",
-									"aria-label": settingsOpen ? t("closeSettings") : t("openSettings"),
-									"aria-expanded": settingsOpen ? "true" : "false",
-									onClick: function () { setSettingsOpen(!settingsOpen); }
-								}, "⚙"),
-								React.createElement("button", {
-									className: "dsh-quota-icon",
-									type: "button",
-									"aria-label": t("collapse"),
-									onClick: function () { setExpanded(false); }
-								}, "▴"))),
-						bodyChildren));
 			}
+
+			return React.createElement("div", { id: "dsh-quota-panel", style: panelStyle },
+				React.createElement("div", { id: "dsh-quota-card", className: settingsOpen ? "is-settings" : "" }, cardChildren));
+		}
 
 			ctx.effect(function () {
 				return ctx.locale.register(NS, DICT);
