@@ -1222,8 +1222,7 @@
 			];
 		}
 
-		const inject = ["slots", "timer", "connection", "locale"];
-
+		var runtimeCtx = null;
 		function apply(ctx) {
 			// Standard cordis effect: setup runs now, the RETURNED function is the
 			// disposer. (Do NOT invoke the callback here — passing the disposer to
@@ -1241,6 +1240,7 @@
 				document.head.append(lift);
 				return function () { tag.remove(); lift.remove(); };
 			});
+		}
 
 			function QuotaPanel(props) {
 				var t = props.t;
@@ -1342,7 +1342,7 @@
 				}, [panelPos ? panelPos.x + ":" + panelPos.y : ""]);
 
 				var call = function (endpoint, payload) {
-					return ctx.connection.rpc.call(CHANNEL, RPC_METHOD_PREFIX + "/" + endpoint, payload);
+					return runtimeCtx.connection.rpc.call(CHANNEL, RPC_METHOD_PREFIX + "/" + endpoint, payload);
 				};
 
 				var loadSpecs = function () {
@@ -1405,7 +1405,7 @@
 				var proxyKey = JSON.stringify(settings.proxy || {});
 
 				React.useEffect(function () {
-					return ctx.interval(function () {
+					return runtimeCtx.interval(function () {
 						if (!document.hidden) loadSpecs().then(load);
 					}, effectiveMs);
 				}, [effectiveMs, proxyKey]);
@@ -1586,6 +1586,8 @@
 				React.createElement("div", { id: "dsh-quota-card", className: settingsOpen ? "is-settings" : "" }, cardChildren));
 		}
 
+		function inject(ctx) {
+			runtimeCtx = ctx;
 			ctx.effect(function () {
 				return ctx.locale.register(NS, DICT);
 			}, "dsh-quota-panel: copy dictionaries");
