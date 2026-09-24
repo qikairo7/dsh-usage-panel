@@ -779,6 +779,14 @@ import type {
 			);
 		}
 
+		function IconBolt() {
+			return React.createElement(
+				'svg',
+				{ width: 13, height: 13, viewBox: '0 0 24 24', fill: 'currentColor' },
+				React.createElement('path', { d: 'M13 2 3 14h9l-1 8 10-12h-9l1-8z' })
+			);
+		}
+
 		function IconRefresh(props: { spinning?: boolean }) {
 			return React.createElement(
 				'svg',
@@ -1670,44 +1678,36 @@ import type {
 			);
 		}
 
-		// ─── Surface C: Permanent Dock Glanceable Pill ──────────────────────────────
+		// ─── Surface B: Composer Bottom Status Bar ──────────────────────────────────
 
-		function InputDockPill(props: { t: (key: string, vars?: Record<string, unknown>) => string; ctx: any }) {
+		function ComposerStatusBar(props: { t: (key: string, vars?: Record<string, unknown>) => string; ctx: any }) {
 			const { t, ctx } = props;
-			const [todaySummary, setTodaySummary] = React.useState(null as SummaryResult | null);
-			const [monthSummary, setMonthSummary] = React.useState(null as SummaryResult | null);
+			const [summary, setSummary] = React.useState(null as SummaryResult | null);
 			const [error, setError] = React.useState(null as string | null);
 
-			const fetchMetrics = React.useCallback(() => {
-				Promise.all([
-					callRpc<SummaryResult>('summary', { range: 'today' }).then(
-						(value) => { setTodaySummary(value); return value; },
-						(err: unknown) => { throw new Error(`today: ${String((err as Error | null)?.message ?? err)}`); }
-					),
-					callRpc<SummaryResult>('summary', { range: 'month' }).then(
-						(value) => { setMonthSummary(value); return value; },
-						(err: unknown) => { throw new Error(`month: ${String((err as Error | null)?.message ?? err)}`); }
-					)
-				]).then(
-					() => { setError(null); },
-					(err: unknown) => {
-						// Fail loud in the surface, never a silent stale pill: the
-						// tooltip carries the failing range and the reason.
+			const fetchSummary = React.useCallback(() => {
+				callRpc<SummaryResult>('summary', { range: 'today' })
+					.then((value) => {
+						setSummary(value);
+						setError(null);
+					})
+					.catch((err: unknown) => {
+						// Fail loud in the surface, never render a fake zero: the chip
+						// shows — and the tooltip carries the reason.
 						const message = String((err as Error | null)?.message ?? err);
 						setError(message);
-						console.error('usage-panel dock pill: summary fetch failed:', message);
-					}
-				);
+						console.error('usage-panel composer status bar: summary fetch failed:', message);
+					});
 			}, []);
 
 			React.useEffect(() => {
-				fetchMetrics();
-				const timer = setInterval(fetchMetrics, 60000);
+				fetchSummary();
+				const timer = setInterval(fetchSummary, 60000);
 				return () => clearInterval(timer);
-			}, [fetchMetrics]);
+			}, [fetchSummary]);
 
-			const todayTokens = todaySummary && error === null ? formatTokens(todaySummary.tokens.total) : '—';
-			const monthTokens = monthSummary && error === null ? formatTokens(monthSummary.tokens.total) : '—';
+			const tokensStr = summary && error === null ? formatTokens(summary.tokens.total) : '—';
+			const costStr = summary && error === null ? formatCostCny(summary.cost.total) : '—';
 
 			const handleClick = () => {
 				try {
@@ -1720,12 +1720,12 @@ import type {
 			return React.createElement(
 				'div',
 				{
-					className: 'dup-dock-pill',
+					className: 'dup-composer-chip',
 					onClick: handleClick,
 					title: error !== null ? t('loadError', { message: error }) : t('clickToOpen')
 				},
-				React.createElement(IconMeter),
-				React.createElement('span', null, t('dockPillText', { today: todayTokens, month: monthTokens }))
+				React.createElement(IconBolt),
+				React.createElement('span', null, t('composerBarToday', { tokens: tokensStr, cost: costStr }))
 			);
 		}
 
@@ -1825,18 +1825,19 @@ import type {
 				};
 			});
 
-			// 5. Register Surface C: Input Permanent Dock Pill
-			ctx.slots.inject('conversation.input.dock', () =>
+			// 4. Register Surface B: Composer Bottom Status Bar
+			ctx.slots.inject('conversation.composer.dock', () =>
 				ctx.slots.register(
 					{
-						name: 'conversation.input.dock',
-						id: 'usage-input-dock',
+						name: 'conversation.composer.dock',
+						id: 'usage-composer-dock',
 						order: 15,
 						locale: NS
 					},
-					() => React.createElement(InputDockPill, { t, ctx })
+					() => React.createElement(ComposerStatusBar, { t, ctx })
 				)
 			);
+
 		}
 
 		exports.apply = apply;
