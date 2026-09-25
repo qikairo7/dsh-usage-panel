@@ -14,7 +14,12 @@ interface Context {
     };
     /** Cordis effect: setup runs now, the returned disposer runs on fiber teardown. */
     effect(callback: () => void | (() => void), label?: string): unknown;
-    /** Cordis injection: runs the callback once the named services exist. */
-    inject(services: string[], callback: (ctx: any) => void): unknown;
+    /** Synchronous service lookup (cordis): undefined when the service is absent. */
+    get?(name: string): any;
+    logger?: {
+        info?(message: string): void;
+        warn?(message: string): void;
+        error?(...args: unknown[]): void;
+    };
 }
 export {};

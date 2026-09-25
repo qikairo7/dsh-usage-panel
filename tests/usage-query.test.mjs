@@ -48,13 +48,11 @@ function captureTool(env) {
 	let tool = null;
 	const ctx = {
 		tools: { register: (definition) => { tool = definition; } },
-		// The host Context carries cordis `effect` and `inject`; the fake mirrors
-		// both so apply() can mount its web routes the way shipped plugins do.
+		// The host Context carries cordis `effect` plus the synchronous service
+		// lookup `get`; the fake mirrors both so apply() mounts its web routes
+		// the way the shipped web app does (`ctx.get('webServer')`).
 		effect: (callback) => { const disposer = callback(); return typeof disposer === 'function' ? disposer : () => {}; },
-		inject: (services, callback) => {
-			assert.ok(Array.isArray(services), 'inject takes a service array');
-			if (services.includes('webServer')) callback({ webServer: { register: () => () => {} }, effect: ctx.effect });
-		}
+		get: (name) => (name === 'webServer' ? { register: () => () => {} } : undefined)
 	};
 	apply(ctx, { refreshMs: 60000, sessionsDir: env.sessionsDir, dataDir: env.dataDir, priceSnapshotPath: env.snapshotPath });
 	assert.ok(tool !== null && typeof tool.execute === 'function', 'usage_query tool must be registered');

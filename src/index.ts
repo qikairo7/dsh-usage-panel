@@ -145,28 +145,32 @@ export function apply(ctx: Context, config: Record<string, any> = {}) {
 		}
 	});
 
-	// Mount the browser half's endpoints on the web server's own route table —
-	// the shipped-plugin pattern (LaoYueHanNi/dsh-token-usage
-	// `ctx.inject(['webServer'], webCtx => webCtx.effect(() => webCtx
-	// .webServer.register(route)))`; y2zyyr/dsh-token-usage-sidebar identical).
+	// Mount the browser half's endpoints on the web server's own route table.
 	//
-	// `inject` here (not the top-level export) keeps the web server a SOFT
-	// dependency: profiles without one (headless runs) still get the logging
-	// plugin and the usage_query tool, they just never mount the routes.
-	// Registering bare — outside an effect — leaves the routes unowned and the
-	// live host never serves them.
-	ctx.inject(['webServer'], (webCtx: any) => {
-		const webServer = webCtx?.webServer;
-		if (webServer === null || webServer === undefined || typeof webServer.register !== 'function') {
-			throw new Error('usage-panel: injected webServer exposes no register() — the browser half would 404 on every request');
-		}
-		for (const endpoint of RPC_ENDPOINTS) {
-			webCtx.effect(
-				() => webServer.register(createRpcRoute(endpoint, (ep: string, payload: unknown) => dispatchRpc(service, ep, payload))),
-				`dsh-usage-panel: ${endpoint} route`
-			);
-		}
-	});
+	// Service access uses the synchronous `ctx.get('webServer')` form — the
+	// same call the shipped web app itself uses (dsh-web-app/lib/index.js:96
+	// `ctx.get("webServer")?.port`). The earlier `ctx.inject(['webServer'], …)`
+	// form never fired on this host: the loader entry sits after the web stack
+	// has already activated, so the callback never ran and the routes were
+	// never mounted (verified live: GET on our endpoint answered 404 while the
+	// SPA fallback answered 405 to every POST, including nonexistent paths).
+	//
+	// Soft dependency by design: a profile without a web server (headless) has
+	// no route table; the plugin still serves its tool half there.
+	const webServer = (ctx as { get?: (name: string) => any }).get?.('webServer');
+	if (webServer === null || webServer === undefined) {
+		ctx.logger?.info?.('dsh-usage-panel: no web server in this profile — browser endpoints not mounted');
+		return;
+	}
+	if (typeof webServer.register !== 'function') {
+		throw new Error('usage-panel: webServer service exposes no register() — the browser half would 404 on every request');
+	}
+	for (const endpoint of RPC_ENDPOINTS) {
+		ctx.effect(
+			() => webServer.register(createRpcRoute(endpoint, (ep: string, payload: unknown) => dispatchRpc(service, ep, payload))),
+			`dsh-usage-panel: ${endpoint} route`
+		);
+	}
 }
 
 /** Minimal ambient shape; the host provides the real Context at runtime. */
@@ -176,6 +180,7 @@ interface Context {
 	};
 	/** Cordis effect: setup runs now, the returned disposer runs on fiber teardown. */
 	effect(callback: () => void | (() => void), label?: string): unknown;
-	/** Cordis injection: runs the callback once the named services exist. */
-	inject(services: string[], callback: (ctx: any) => void): unknown;
+	/** Synchronous service lookup (cordis): undefined when the service is absent. */
+	get?(name: string): any;
+	logger?: { info?(message: string): void; warn?(message: string): void; error?(...args: unknown[]): void };
 }
