@@ -1048,9 +1048,15 @@ import type {
 /* Responsive: model/provider pair shares a row on wide screens only. */
 .dup-root .dup-cols {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  grid-template-columns: 1fr;
   gap: var(--dup-space-3);
   min-width: 0;
+}
+@media (min-width: 1100px) {
+  .dup-root .dup-cols {
+    grid-template-columns: 1fr 1fr;
+    align-items: start;
+  }
 }
 @media (max-width: 860px) {
   .dup-root {
@@ -1256,12 +1262,11 @@ import type {
 
 			const yTicks = [0, 0.5, 1].map((f) => ({ f, y: baseY - f * chartH, val: maxVal * f }));
 
+			// Show every bucket label while they fit (≤14), then thin to ~7.
 			const xLabelIdx: number[] = [];
-			const labelSlots = Math.min(4, rows.length);
-			for (let k = 0; k < labelSlots; k++) {
-				const idx = labelSlots === 1 ? 0 : Math.round((k / (labelSlots - 1)) * (rows.length - 1));
-				if (!xLabelIdx.includes(idx)) xLabelIdx.push(idx);
-			}
+			const labelStep = rows.length <= 14 ? 1 : Math.ceil(rows.length / 7);
+			for (let idx = 0; idx < rows.length; idx += labelStep) xLabelIdx.push(idx);
+			if (xLabelIdx[xLabelIdx.length - 1] !== rows.length - 1) xLabelIdx.push(rows.length - 1);
 			// Hour buckets key as "YYYY-MM-DD HH:00" — show only the clock time.
 			const shortDate = (date: string): string =>
 				date.includes(' ') ? date.slice(11, 16) : date.length >= 10 ? date.slice(5) : date;
@@ -1396,20 +1401,10 @@ import type {
 												y: yTop,
 												width: span,
 												height: h,
+												rx: 2,
 												fill: p.color,
 												opacity: hoveredIdx === null || hoveredIdx === i ? 1 : 0.45
 											});
-										}),
-										// Cache-hit rate overlaid as a dotted line, so the
-										// composition and the efficiency read together.
-										React.createElement('line', {
-											x1: xs[i] - span / 2,
-											y1: baseY - ((r.input + r.cacheRead) > 0 ? (r.cacheRead / (r.input + r.cacheRead)) * chartH : 0),
-											x2: xs[i] + span / 2,
-											y2: baseY - ((r.input + r.cacheRead) > 0 ? (r.cacheRead / (r.input + r.cacheRead)) * chartH : 0),
-											stroke: '#30D158',
-											strokeWidth: 1.5,
-											strokeDasharray: '2 2'
 										}),
 										// Invisible full-height hit target: a 3px circle was
 										// too small to hover reliably on touch/trackpads.
@@ -1495,12 +1490,6 @@ import type {
 								React.createElement('i', { style: { background: s.color } }),
 								s.label
 							)
-						),
-						React.createElement(
-							'span',
-							{ className: 'dup-legend-item' },
-							React.createElement('i', { style: { background: '#30D158', opacity: 0.5 } }),
-							t('cacheHitLine')
 						),
 						React.createElement(
 							'span',
@@ -2161,8 +2150,12 @@ import type {
 									)
 								)
 						  )
+				)
 				),
-
+				// Second pair row: provider + price editor share the grid below.
+				React.createElement(
+					'div',
+					{ className: 'dup-cols' },
 				// 6b. Provider Breakdown (cc-switch's ProviderStatsTable)
 				React.createElement(
 					'div',
