@@ -1048,15 +1048,9 @@ import type {
 /* Responsive: model/provider pair shares a row on wide screens only. */
 .dup-root .dup-cols {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
   gap: var(--dup-space-3);
   min-width: 0;
-}
-@media (min-width: 1100px) {
-  .dup-root .dup-cols {
-    grid-template-columns: 1fr 1fr;
-    align-items: start;
-  }
 }
 @media (max-width: 860px) {
   .dup-root {
@@ -1291,7 +1285,7 @@ import type {
 				React.createElement(
 					'div',
 					{ className: 'dup-card-header' },
-					React.createElement('span', { className: 'dup-card-title' }, t('timeseriesTitle')),
+					React.createElement('span', { className: 'dup-card-title' }, title),
 					React.createElement(
 						'div',
 						{ className: 'dup-segmented' },
@@ -1570,6 +1564,9 @@ import type {
 				const n = Number(v);
 				return Number.isFinite(n) && n >= 0 ? n : 0;
 			};
+			// "GLM-5.3" vs "glm-5.3" read as the same name; only show the raw id
+			// as a sub-line when it genuinely differs from the display label.
+			const normId = (s: string) => s.toLowerCase().replace(/[-_.\s]+/g, '');
 			const field = (label: string, key: string, type: string) =>
 				React.createElement(
 					'label',
@@ -2070,6 +2067,7 @@ import type {
 											const pricingEntry = pricing?.models?.find((m: PricingModel) => m.model === row.key);
 											const mode = pricingEntry ? pricingEntry.priceMode : row.cost === 0 && row.tokens > 0 ? 'unpriced' : 'official';
 											const label = pricingEntry?.displayName || row.key;
+											const showId = normId(label) !== normId(row.key);
 
 											return React.createElement(
 												'tr',
@@ -2078,7 +2076,7 @@ import type {
 													'td',
 													{ style: { fontWeight: 600 } },
 													React.createElement('div', null, label),
-													label !== row.key &&
+													showId &&
 														React.createElement(
 															'div',
 															{ style: { fontSize: '10px', color: 'var(--dsw-text-tertiary, #86909C)', fontFamily: 'monospace' } },
@@ -2105,8 +2103,7 @@ import type {
 									)
 								)
 						  )
-					)
-				),
+					),
 
 				// 6. Session Top List (with subagent rollup)
 				React.createElement(
@@ -2318,7 +2315,7 @@ import type {
 															'td',
 															null,
 															React.createElement('div', { style: { fontWeight: 600 } }, m.displayName || m.model),
-															m.displayName
+															m.displayName && normId(m.displayName) !== normId(m.model)
 																? React.createElement(
 																		'div',
 																		{ style: { fontSize: '11px', color: 'var(--dsw-text-tertiary, #86909C)', fontFamily: 'monospace' } },
@@ -2357,6 +2354,7 @@ import type {
 						'div',
 						{ style: { marginTop: '8px' } },
 						React.createElement('button', { type: 'button', className: 'dup-btn', disabled: priceBusy, onClick: addModel }, t('priceAdd'))
+					)
 					)
 				),
 
