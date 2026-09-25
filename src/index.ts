@@ -88,6 +88,44 @@ export function apply(ctx: Context, config: Record<string, any> = {}) {
 
 	const service = createUsageService({ sessionsDir, ledgerPath, refreshMs, dataDir, priceSnapshotPath });
 
+	// ORDER MATTERS: the browser half mounts first, the agent tool last.
+	//
+	// `ctx.tools.register` validates its argument at call time and throws on a
+	// malformed definition. Because `apply()` is one synchronous fiber body, a
+	// throw there aborts everything after it — which is exactly how the first
+	// live release died: a missing `output` declaration threw at the tool
+	// registration (line order: tool first), so the route mounting below never
+	// ran, every browser request fell through to the SPA fallback (404/405),
+	// and the market page reported 启动失败. Mounting the data endpoints first
+	// means no future tool-contract break can take the panel down with it.
+
+	// Mount the browser half's endpoints on the web server's own route table.
+	//
+	// Service access uses the synchronous `ctx.get('webServer')` form — the
+	// same call the shipped web app itself uses (dsh-web-app/lib/index.js:96
+	// `ctx.get("webServer")?.port`). The earlier `ctx.inject(['webServer'], …)`
+	// form never fired on this host: the loader entry sits after the web stack
+	// has already activated, so the callback never ran and the routes were
+	// never mounted (verified live: GET on our endpoint answered 404 while the
+	// SPA fallback answered 405 to every POST, including nonexistent paths).
+	//
+	// Soft dependency by design: a profile without a web server (headless) has
+	// no route table; the plugin still serves its tool half there.
+	const webServer = (ctx as { get?: (name: string) => any }).get?.('webServer');
+	if (webServer === null || webServer === undefined) {
+		ctx.logger?.info?.('dsh-usage-panel: no web server in this profile — browser endpoints not mounted');
+	} else {
+		if (typeof webServer.register !== 'function') {
+			throw new Error('usage-panel: webServer service exposes no register() — the browser half would 404 on every request');
+		}
+		for (const endpoint of RPC_ENDPOINTS) {
+			ctx.effect(
+				() => webServer.register(createRpcRoute(endpoint, (ep: string, payload: unknown) => dispatchRpc(service, ep, payload))),
+				`dsh-usage-panel: ${endpoint} route`
+			);
+		}
+	}
+
 	ctx.tools.register({
 		name: 'usage_query',
 		description: 'Query aggregated LLM token usage and cost computed from local DSH session archives. Prices use official/community/shadow modes; models without price data report cost:null (unpriced), never 0.',
@@ -103,6 +141,24 @@ export function apply(ctx: Context, config: Record<string, any> = {}) {
 				}
 			},
 			required: ['group_by']
+		},
+		// Mandatory (dsh-tools register(): `tool "X" must declare output
+		// { schema, render, presentationMeta? }`, then assertSupportedJsonSchema
+		// on the schema). The payload is endpoint-shaped and varies with
+		// group_by, so the schema types the envelope and accepts any lossless
+		// JSON payload inside `result`; `render` is what the model reads.
+		output: {
+			schema: {
+				type: 'object',
+				properties: {
+					result: { description: 'Aggregated usage payload; the shape follows group_by.' }
+				},
+				required: ['result'],
+				additionalProperties: false
+			},
+			render: (_args: unknown, value: { result: unknown }) => [
+				{ type: 'text' as const, text: JSON.stringify(value.result, null, 2) }
+			]
 		},
 		execute: async (args: unknown) => {
 			const a = (args ?? {}) as Record<string, unknown>;
@@ -126,57 +182,45 @@ export function apply(ctx: Context, config: Record<string, any> = {}) {
 			else if (since !== undefined) range = { from: since, to: new Date(Date.now() + 60_000).toISOString() };
 			else if (until !== undefined) range = { from: new Date(0).toISOString(), to: until };
 			else range = 'all';
+			let payload: unknown;
 			switch (groupBy) {
 				case 'summary':
-					return service.summary(range);
+					payload = await service.summary(range);
+					break;
 				case 'day':
-					return service.timeseries(range, 'day');
+					payload = await service.timeseries(range, 'day');
+					break;
 				case 'model':
-					return service.breakdown(range, 'model');
+					payload = await service.breakdown(range, 'model');
+					break;
 				case 'provider':
-					return service.breakdown(range, 'provider');
+					payload = await service.breakdown(range, 'provider');
+					break;
 				case 'session':
-					return service.breakdown(range, 'session');
+					payload = await service.breakdown(range, 'session');
+					break;
 				case 'origin':
-					return service.breakdown(range, 'origin');
+					payload = await service.breakdown(range, 'origin');
+					break;
 				default:
 					throw new Error(`usage_query: group_by must be one of summary|day|model|provider|session|origin, got ${JSON.stringify(groupBy)}`);
 			}
+			return { result: payload };
 		}
 	});
-
-	// Mount the browser half's endpoints on the web server's own route table.
-	//
-	// Service access uses the synchronous `ctx.get('webServer')` form — the
-	// same call the shipped web app itself uses (dsh-web-app/lib/index.js:96
-	// `ctx.get("webServer")?.port`). The earlier `ctx.inject(['webServer'], …)`
-	// form never fired on this host: the loader entry sits after the web stack
-	// has already activated, so the callback never ran and the routes were
-	// never mounted (verified live: GET on our endpoint answered 404 while the
-	// SPA fallback answered 405 to every POST, including nonexistent paths).
-	//
-	// Soft dependency by design: a profile without a web server (headless) has
-	// no route table; the plugin still serves its tool half there.
-	const webServer = (ctx as { get?: (name: string) => any }).get?.('webServer');
-	if (webServer === null || webServer === undefined) {
-		ctx.logger?.info?.('dsh-usage-panel: no web server in this profile — browser endpoints not mounted');
-		return;
-	}
-	if (typeof webServer.register !== 'function') {
-		throw new Error('usage-panel: webServer service exposes no register() — the browser half would 404 on every request');
-	}
-	for (const endpoint of RPC_ENDPOINTS) {
-		ctx.effect(
-			() => webServer.register(createRpcRoute(endpoint, (ep: string, payload: unknown) => dispatchRpc(service, ep, payload))),
-			`dsh-usage-panel: ${endpoint} route`
-		);
-	}
 }
 
 /** Minimal ambient shape; the host provides the real Context at runtime. */
 interface Context {
 	tools: {
-		register(definition: { name: string; description: string; parameters: Record<string, unknown>; execute: (args: unknown, exec: unknown) => Promise<unknown> }): unknown;
+		/** `output` is mandatory: register() throws without { schema, render }. */
+		register(definition: {
+			name: string;
+			description: string;
+			parameters: Record<string, unknown>;
+			output: { schema: Record<string, unknown>; render(args: unknown, value: any): unknown[]; presentationMeta?(args: unknown, value: any): unknown };
+			execute: (args: unknown, exec: unknown) => Promise<unknown>;
+		}): unknown;
 	};
 	/** Cordis effect: setup runs now, the returned disposer runs on fiber teardown. */
 	effect(callback: () => void | (() => void), label?: string): unknown;
