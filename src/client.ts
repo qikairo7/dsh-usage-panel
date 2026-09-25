@@ -552,9 +552,11 @@ import type {
   flex-direction: column;
   margin-top: 8px;
 }
+/* The SVG keeps its intrinsic aspect ratio (no preserveAspectRatio="none"),
+   so circles stay round and stroke widths stay even at any pane width. */
 .dup-chart-svg {
   width: 100%;
-  height: 150px;
+  height: auto;
   overflow: visible;
   display: block;
 }
@@ -881,35 +883,58 @@ import type {
 				return r.calls;
 			});
 			const maxVal = Math.max(...values, 1);
+
+			// Fixed viewBox coordinate system. The SVG is scaled uniformly by
+			// the browser (no preserveAspectRatio="none"), so circles stay
+			// circular and strokes keep an even width at any pane width.
 			const width = 340;
-			const height = 120;
-			const paddingX = 14;
-			const paddingY = 16;
-			const chartW = width - paddingX * 2;
-			const chartH = height - paddingY * 2;
+			const height = 132;
+			const padLeft = 48;
+			const padRight = 10;
+			const padTop = 10;
+			const padBottom = 26;
+			const chartW = width - padLeft - padRight;
+			const chartH = height - padTop - padBottom;
+			const baseY = padTop + chartH;
+
+			const fmtAxis = (v: number): string => {
+				if (metric === 'tokens') return formatTokens(v);
+				if (metric === 'cost') return formatCostCny(v);
+				return formatNumber(v);
+			};
 
 			const points = rows.map((r, i) => {
-				const x = rows.length > 1 ? paddingX + (i / (rows.length - 1)) * chartW : width / 2;
+				// A single bucket has no span to divide: centre it instead of
+				// collapsing the series onto the left edge.
+				const x = rows.length > 1 ? padLeft + (i / (rows.length - 1)) * chartW : padLeft + chartW / 2;
 				const val = metric === 'tokens' ? r.tokens : metric === 'cost' ? r.cost : r.calls;
-				const y = height - paddingY - (val / maxVal) * chartH;
+				const y = baseY - (val / maxVal) * chartH;
 				return { x, y, row: r, val };
 			});
 
+			// Straight segments: data-accurate, and they cannot overshoot the
+			// way interpolated control points can.
 			let pathD = '';
 			let areaD = '';
-			if (points.length > 0) {
+			if (points.length > 1) {
 				pathD = `M ${points[0].x} ${points[0].y}`;
-				for (let i = 1; i < points.length; i++) {
-					// Catmull-Rom or smooth cubic curve
-					const prev = points[i - 1];
-					const curr = points[i];
-					const midX = (prev.x + curr.x) / 2;
-					pathD += ` C ${midX} ${prev.y}, ${midX} ${curr.y}, ${curr.x} ${curr.y}`;
-				}
+				for (let i = 1; i < points.length; i++) pathD += ` L ${points[i].x} ${points[i].y}`;
 				const lastP = points[points.length - 1];
-				const firstP = points[0];
-				areaD = `${pathD} L ${lastP.x} ${height - paddingY} L ${firstP.x} ${height - paddingY} Z`;
+				areaD = `${pathD} L ${lastP.x} ${baseY} L ${points[0].x} ${baseY} Z`;
 			}
+
+			// Y gridlines: 0 / mid / max, each labelled so the curve is readable.
+			const yTicks = [0, 0.5, 1].map((f) => ({ f, y: baseY - f * chartH, val: maxVal * f }));
+
+			// X labels: first, last, and up to two in between — deduped so a
+			// short series never prints the same date twice.
+			const xLabelIdx: number[] = [];
+			const labelSlots = Math.min(4, rows.length);
+			for (let k = 0; k < labelSlots; k++) {
+				const idx = labelSlots === 1 ? 0 : Math.round((k / (labelSlots - 1)) * (rows.length - 1));
+				if (!xLabelIdx.includes(idx)) xLabelIdx.push(idx);
+			}
+			const shortDate = (date: string): string => (date.length >= 10 ? date.slice(5) : date);
 
 			const hoveredPoint = hoveredIdx !== null && points[hoveredIdx] ? points[hoveredIdx] : null;
 
@@ -970,7 +995,7 @@ import type {
 					),
 					React.createElement(
 						'svg',
-						{ className: 'dup-chart-svg', viewBox: `0 0 ${width} ${height}`, preserveAspectRatio: 'none' },
+						{ className: 'dup-chart-svg', viewBox: `0 0 ${width} ${height}` },
 						React.createElement(
 							'defs',
 							null,
@@ -981,29 +1006,62 @@ import type {
 								React.createElement('stop', { offset: '100%', stopColor: '#007AFF', stopOpacity: '0.01' })
 							)
 						),
-						// Baseline
-						React.createElement('line', {
-							x1: paddingX,
-							y1: height - paddingY,
-							x2: width - paddingX,
-							y2: height - paddingY,
-							stroke: 'rgba(0,0,0,0.06)',
-							strokeWidth: 1
-						}),
+						// Y gridlines + value labels (0 / mid / max)
+						yTicks.map((t, idx) =>
+							React.createElement(
+								'g',
+								{ key: `y${idx}` },
+								React.createElement('line', {
+									x1: padLeft,
+									y1: t.y,
+									x2: width - padRight,
+									y2: t.y,
+									stroke: 'rgba(0,0,0,0.06)',
+									strokeWidth: 1
+								}),
+								React.createElement(
+									'text',
+									{
+										x: padLeft - 6,
+										y: t.y + 3,
+										textAnchor: 'end',
+										fontSize: 9,
+										fill: '#86909C'
+									},
+									fmtAxis(t.val)
+								)
+							)
+						),
 						// Area fill
 						areaD && React.createElement('path', { d: areaD, fill: 'url(#dup-area-grad)' }),
 						// Line stroke
-						pathD && React.createElement('path', { d: pathD, fill: 'none', stroke: '#007AFF', strokeWidth: 2.2, strokeLinecap: 'round' }),
-						// Points
+						pathD && React.createElement('path', { d: pathD, fill: 'none', stroke: '#007AFF', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' }),
+						// X axis date labels
+						xLabelIdx.map((idx) =>
+							React.createElement(
+								'text',
+								{
+									key: `x${idx}`,
+									x: points[idx].x,
+									y: height - 8,
+									textAnchor: idx === 0 ? 'start' : idx === rows.length - 1 ? 'end' : 'middle',
+									fontSize: 9,
+									fill: '#86909C'
+								},
+								shortDate(rows[idx].date)
+							)
+						),
+						// Points. A single bucket has no line, so its dot is drawn
+						// larger — otherwise "today" would render an empty plot.
 						points.map((p, idx) =>
 							React.createElement('circle', {
 								key: idx,
 								cx: p.x,
 								cy: p.y,
-								r: hoveredIdx === idx ? 5 : 3,
-								fill: hoveredIdx === idx ? '#007AFF' : '#FFFFFF',
+								r: points.length === 1 ? 4 : hoveredIdx === idx ? 4.5 : 2.5,
+								fill: points.length === 1 || hoveredIdx === idx ? '#007AFF' : '#FFFFFF',
 								stroke: '#007AFF',
-								strokeWidth: 2,
+								strokeWidth: 1.8,
 								style: { cursor: 'pointer', transition: 'r 120ms ease' },
 								onMouseEnter: () => setHoveredIdx(idx),
 								onMouseLeave: () => setHoveredIdx(null)

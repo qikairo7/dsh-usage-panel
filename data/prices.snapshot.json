@@ -19,10 +19,12 @@
     "firecrawl": 0.03361
   },
   "_caveats": [
-    "gemini-3.8-flash 与 gemini-3.8-flash-tiered 为 2026-12-31 前限时价（$0.75/$3.75/$0.075）；2027-01-01 起翻倍至 $1.50/$7.50/$0.15——到期需更新本快照。",
-    "deepseek-v4.1（非 flash）官方无此模型名，按 WS4 结论保持 unpriced；如所指为旗舰请改用 deepseek-v4-pro 条目计价。",
+    "gemini-3.8-flash / 3.8-flash-tiered / 3.7-flash / 3.6-flash 为 2026-12-31 前限时价（$0.75/$3.75/$0.075）；2027-01-01 起翻倍至 $1.50/$7.50/$0.15——到期需更新本快照。",
     "tiers 内某维度为 null 表示该维度不计费（如 DeepSeek 无 cacheWrite 项），引擎按 0 处理；模型级 unpriced 的 cost 为 null 绝不计 0。",
-    "channelUnitPricesCny 仅供 ledger ¥ 折算（每渠道取默认 search 档）；无按次计价的渠道（zhipu 套餐制 / baidu 免费档 / web_search 余额制）不在此表=不计入 derivedCny。"
+    "channelUnitPricesCny 仅供 ledger ¥ 折算（每渠道取默认 search 档）；无按次计价的渠道（zhipu 套餐制 / baidu 免费档 / web_search 余额制）不在此表=不计入 derivedCny。",
+    "provider 字段用供给方 id（如 zai-coding-cn / workbuddy-global / qoder），与 DSH 会话记录里的 provider 值对齐；查价时 provider 不匹配会回退到同 model 名的任意条目。",
+    "单价来源分四级：official（厂商定价页）/ cross-verified（≥2 独立结构化源）/ single-source（单一数据集，标【待确认】）/ official-alias（DSH 侧别名按基准模型价）。",
+    "本次（2026-09-25）新增/修正：DeepSeek 别名三连（deepseek-flash / deepseek-v4-flash / deepseek-v4.1-flash 同价）、qfmodel=Qwen3.8-Flash、hy4-preview-f=hy4-preview（原为 unpriced）、Gemini 3.7/3.6/3.5/3.1-pro、GLM 5.2/5.1/5v-turbo、Kimi k3/k2.6/k2.7、MiniMax-M3、GPT 6-astra/5.6-sol/5.5/5.4。"
   ],
   "models": [
     {
@@ -65,7 +67,35 @@
       "per": "MTok",
       "priceMode": "official",
       "sourceUrl": "https://api-docs.deepseek.com/zh-cn/quick_start/pricing",
-      "notes": "官方 API 模型名 deepseek-flash（模型版本 DeepSeek-V4.1-Flash）。本条取【高峰档】CNY 2元/8元/0.04元（官方原生，按 6.722655 换算）。空闲档 1元/4元/0.02元 ≈ $0.1487/$0.595/$0.00297；高峰=北京时间工作日 9-12/14-18，其余空闲。口径印证：OpenRouter deepseek/deepseek-v4.1-flash $0.15/$0.60/cacheRead $0.003 恰为空闲档换算值 ✓。官方无独立 cacheWrite 计费项。上下文 1M，输出最大 384K，支持视觉。"
+      "notes": "官方 API 模型名 deepseek-flash（该页 model version 字段原文即 DeepSeek-V4.1-Flash，故 DSH 侧别名 deepseek-v4.1-flash = 官方 deepseek-flash）。本条取【高峰档】CNY 2元/8元/0.04元（官方原生，按 6.722655 换算；换算后正好 = ¥2.00/¥8.00/¥0.04，即实际付费额）。空闲档 1元/4元/0.02元 ≈ $0.1487/$0.595/$0.00297；高峰=北京时间工作日 9-12/14-18，其余空闲。官方 EN 页直接给 USD：高峰 $0.30/$1.20/$0.006（已四舍五入），故本条与 EN 页差约 0.8%——本表按 CNY 原生价换算，使人民币显示与实际账单完全一致。官方无独立 cacheWrite 计费项。上下文 1M，输出最大 384K，支持视觉。旧名 deepseek-v4-flash / deepseek-v4-flash-vision-exp 已退役但仍按 Flash 价计费（见下方 deepseek-v4-flash 条）。"
+    },
+    {
+      "model": "deepseek-flash",
+      "provider": "deepseek",
+      "tiers": {
+        "input": 0.2975,
+        "output": 1.19,
+        "cacheRead": 0.00595,
+        "cacheWrite": null
+      },
+      "per": "MTok",
+      "priceMode": "official-alias",
+      "sourceUrl": "https://api-docs.deepseek.com/zh-cn/quick_start/pricing",
+      "notes": "官方 API 的真实 model id（DSH 侧记为 deepseek-v4.1-flash）。两 id 同价，本条为直连官方 API 时出现官方名的情况兜底。"
+    },
+    {
+      "model": "deepseek-v4-flash",
+      "provider": "deepseek",
+      "tiers": {
+        "input": 0.2975,
+        "output": 1.19,
+        "cacheRead": 0.00595,
+        "cacheWrite": null
+      },
+      "per": "MTok",
+      "priceMode": "official-alias",
+      "sourceUrl": "https://api-docs.deepseek.com/zh-cn/quick_start/pricing",
+      "notes": "已退役的旧模型名。官方页注明：请求仍由 DeepSeek-V4.1-Flash 服务并按 Flash 价计费，故按同价处理。注意与带日期后缀的 deepseek-v4-flash-0731（上一代 V4-Flash，价格不同）区分。"
     },
     {
       "model": "deepseek-v4.1",
@@ -79,7 +109,7 @@
       "per": "MTok",
       "priceMode": "unpriced",
       "sourceUrl": "https://api-docs.deepseek.com/zh-cn/quick_start/pricing",
-      "notes": "【待确认】DeepSeek 官方 API 无此模型名：在售仅 deepseek-flash（=V4.1-Flash）与 deepseek-v4-pro（=V4-Pro-0813）；OpenRouter/LiteLLM 亦无独立 deepseek-v4.1 条目。若所指为 V4.1 家族旗舰，请用本目录 deepseek-v4-pro 条目计价。"
+      "notes": "【待确认】DeepSeek 官方 API 无此模型名：在售仅 deepseek-flash（=V4.1-Flash）与 deepseek-v4-pro（=V4-Pro-0813）；OpenRouter/LiteLLM 亦无独立 deepseek-v4.1 条目。若所指为 V4.1 家族旗舰，请用本目录 deepseek-v4-pro 条目计价；若实为 V4.1-Flash，请用 deepseek-v4.1-flash 条目。"
     },
     {
       "model": "deepseek-v4-pro",
@@ -141,15 +171,281 @@
       "model": "hy4-preview-f",
       "provider": "tencent",
       "tiers": {
-        "input": null,
-        "output": null,
-        "cacheRead": null,
+        "input": 0.834,
+        "output": 2.501,
+        "cacheRead": 0.042,
         "cacheWrite": null
       },
       "per": "MTok",
-      "priceMode": "unpriced",
+      "priceMode": "single-source",
       "sourceUrl": "https://openrouter.ai/tencent/hy4-preview",
-      "notes": "【待确认】精确名 hy4-preview-f 在 OpenRouter、LiteLLM、anysearch 网页索引三源均零命中（-f 后缀疑为 DSH/workbuddy 供给方内部变体名）。最近似公开模型 tencent/hy4-preview（腾讯混元 Hy 团队 770B MoE）：OpenRouter $0.834 in/$2.501 out/cacheRead $0.042；aihubmix 转售 $0.845/$2.535/$0.042。若确认 -f = 同模型，可按 $0.834/$2.501 估算。"
+      "notes": "DSH 侧 id。精确名 hy4-preview-f 在 OpenRouter 全量 460 模型、LiteLLM 全量 4355 键、腾讯官方文档三处均零命中（-f 疑为供给方内部变体名，本地 cordis.patch.yml 中 hy4-preview 与 hy4-preview-f 同显示名「Hy4 preview」，实为同一模型）。腾讯官方混元定价页不含 Hy4（该页注明能力迁移至 TokenHub），故无官方价可引。本条按公开的 tencent/hy4-preview 计价：$0.834/$2.501/cacheRead $0.042（OR 与 LiteLLM openrouter 镜像一致；aihubmix 转售 $0.845/$2.535 约高 1.3%）。770B 总参/49B 激活 MoE，上下文 1M。"
+    },
+    {
+      "model": "hy4-preview",
+      "provider": "tencent",
+      "tiers": {
+        "input": 0.834,
+        "output": 2.501,
+        "cacheRead": 0.042,
+        "cacheWrite": null
+      },
+      "per": "MTok",
+      "priceMode": "single-source",
+      "sourceUrl": "https://openrouter.ai/tencent/hy4-preview",
+      "notes": "腾讯混元 Hy4 preview 的公开 id（与 hy4-preview-f 同价，见该条说明）。"
+    },
+    {
+      "model": "qfmodel",
+      "provider": "qoder",
+      "tiers": {
+        "input": 0.15,
+        "output": 0.47,
+        "cacheRead": 0.016,
+        "cacheWrite": 0.2
+      },
+      "per": "MTok",
+      "priceMode": "single-source",
+      "sourceUrl": "https://openrouter.ai/qwen/qwen3.8-flash",
+      "notes": "Qoder 供给方的内部 id；dsh-provider-qoder 的模型表明确标注 name: Qwen3.8-Flash（其自带测试用例亦写「qfmodel (Qwen3.8-Flash)」），故按 qwen3.8-flash 计价。Qoder 自身计费口径无法从公开源核实，本条用阿里云百炼官方通道价（LiteLLM dashscope/qwen3.8-flash 与 OpenRouter 三项一致）。priceFactor: 0，疑为订阅制。"
+    },
+    {
+      "model": "qwen3.8-flash",
+      "provider": "alibaba",
+      "tiers": {
+        "input": 0.15,
+        "output": 0.47,
+        "cacheRead": 0.016,
+        "cacheWrite": 0.2
+      },
+      "per": "MTok",
+      "priceMode": "single-source",
+      "sourceUrl": "https://openrouter.ai/qwen/qwen3.8-flash",
+      "notes": "【待确认】官方 id 确认为 qwen3.8-flash（点号形式；qwen3-8-flash 在任何源都不存在），已见于阿里云百炼官方模型列表页。但阿里官方定价页反爬不可达，故本条为聚合源值：OpenRouter 与 LiteLLM dashscope/qwen3.8-flash（dashscope = 阿里自家通道名）三项完全一致。第三方更低价：together_ai $0.09/$0.282（无缓存档）、aihubmix $0.1126/$0.38/$0.0141/$0.176。"
+    },
+    {
+      "model": "gemini-3.7-flash",
+      "provider": "google",
+      "tiers": {
+        "input": 0.75,
+        "output": 3.75,
+        "cacheRead": 0.075,
+        "cacheWrite": null
+      },
+      "per": "MTok",
+      "priceMode": "official",
+      "sourceUrl": "https://ai.google.dev/gemini-api/docs/pricing",
+      "notes": "Standard 档，限时价至 2026-12-31；2027-01-01 起涨至 $1.50/$7.50/$0.15。缓存按存储时长另计（非按 token），故 cacheWrite 为 null。OR 与 LiteLLM 完全一致。"
+    },
+    {
+      "model": "gemini-3.6-flash",
+      "provider": "google",
+      "tiers": {
+        "input": 0.75,
+        "output": 3.75,
+        "cacheRead": 0.075,
+        "cacheWrite": null
+      },
+      "per": "MTok",
+      "priceMode": "official",
+      "sourceUrl": "https://ai.google.dev/gemini-api/docs/pricing",
+      "notes": "与 gemini-3.7-flash 同价同条款（限时价至 2026-12-31，2027-01-01 翻倍）。OR 与 LiteLLM 完全一致。"
+    },
+    {
+      "model": "gemini-3.5-flash",
+      "provider": "google",
+      "tiers": {
+        "input": 1.5,
+        "output": 9,
+        "cacheRead": 0.15,
+        "cacheWrite": null
+      },
+      "per": "MTok",
+      "priceMode": "official",
+      "sourceUrl": "https://ai.google.dev/gemini-api/docs/pricing",
+      "notes": "Standard 档。缓存存储 $1.00/MTok/小时，非按 token 计费。"
+    },
+    {
+      "model": "gemini-3.1-pro",
+      "provider": "google",
+      "tiers": {
+        "input": 2,
+        "output": 12,
+        "cacheRead": 0.2,
+        "cacheWrite": null
+      },
+      "per": "MTok",
+      "priceMode": "official-alias",
+      "sourceUrl": "https://ai.google.dev/gemini-api/docs/pricing",
+      "notes": "【待确认】官方无无后缀的 gemini-3.1-pro SKU，真实 id 为 gemini-3.1-pro-preview / -customtools；本条按该预览版 Standard 价填充（LiteLLM gemini/gemini-3.1-pro-preview 一致）。>200k 提示：$4.00/$18.00/$0.40。缓存存储 $4.50/MTok/小时。"
+    },
+    {
+      "model": "glm-5.2",
+      "provider": "zai",
+      "tiers": {
+        "input": 1.4,
+        "output": 4.4,
+        "cacheRead": 0.26,
+        "cacheWrite": 0
+      },
+      "per": "MTok",
+      "priceMode": "official",
+      "sourceUrl": "https://docs.z.ai/guides/overview/pricing",
+      "notes": "z.ai 官方 Latest Models 表，与 GLM-5.3 同价；LiteLLM zai/glm-5.2 一致 ✓。cacheWrite 官方标注 Limited-time Free（记 0）。⚠️ OpenRouter z-ai/glm-5.2 供给价更低（$0.6496/$2.0416/$0.12064），以官方为准。"
+    },
+    {
+      "model": "glm-5.1",
+      "provider": "zai",
+      "tiers": {
+        "input": 1.4,
+        "output": 4.4,
+        "cacheRead": 0.26,
+        "cacheWrite": 0
+      },
+      "per": "MTok",
+      "priceMode": "official",
+      "sourceUrl": "https://docs.z.ai/guides/overview/pricing",
+      "notes": "z.ai 官方 Text Models 表；LiteLLM zai/glm-5.1 一致 ✓。cacheWrite Limited-time Free（记 0）。"
+    },
+    {
+      "model": "glm-5v-turbo",
+      "provider": "zai",
+      "tiers": {
+        "input": 1.2,
+        "output": 4,
+        "cacheRead": 0.24,
+        "cacheWrite": null
+      },
+      "per": "MTok",
+      "priceMode": "single-source",
+      "sourceUrl": "https://openrouter.ai/z-ai/glm-5v-turbo",
+      "notes": "【待确认】z.ai 官方定价页无此模型（Vision Models 仅列 GLM-4.6V / GLM-OCR / GLM-4.6V-FlashX / GLM-4.5V / GLM-4.6V-Flash），故为聚合源值：OR 与 LiteLLM openrouter 镜像一致 $1.2/$4/$0.24。aihubmix 更低价 $0.7042/$3.098/$0.169。"
+    },
+    {
+      "model": "kimi-k3",
+      "provider": "moonshot",
+      "tiers": {
+        "input": 3,
+        "output": 15,
+        "cacheRead": 0.3,
+        "cacheWrite": null
+      },
+      "per": "MTok",
+      "priceMode": "single-source",
+      "sourceUrl": "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json",
+      "notes": "【待确认】Moonshot 官方定价页抓取失败（返回内容不含相关模型名，疑 JS 渲染），故为单源值：LiteLLM moonshot/kimi-k3。⚠️ 重大分歧：OpenRouter moonshotai/kimi-k3 = $0.8845/$10.5346/$0.30，输入价仅为本条 29%。部分 LiteLLM 条目（moonshotai.kimi-k3 / global.*）cacheWrite 记 $3.75。实际计费口径待确认。"
+    },
+    {
+      "model": "kimi-k3-1",
+      "provider": "moonshot",
+      "tiers": {
+        "input": 3,
+        "output": 15,
+        "cacheRead": 0.3,
+        "cacheWrite": null
+      },
+      "per": "MTok",
+      "priceMode": "single-source",
+      "sourceUrl": "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json",
+      "notes": "DSH 侧 id（本地 cordis.patch.yml 中 kimi-k3-1 显示名为 Kimi-K3），按 kimi-k3 计价，见该条说明。"
+    },
+    {
+      "model": "kimi-k2.7",
+      "provider": "moonshot",
+      "tiers": {
+        "input": 0.95,
+        "output": 4,
+        "cacheRead": 0.19,
+        "cacheWrite": null
+      },
+      "per": "MTok",
+      "priceMode": "single-source",
+      "sourceUrl": "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json",
+      "notes": "【待确认】公开源只有 kimi-k2.7-code 一个 SKU（无无后缀的 kimi-k2.7），本条取该 -code 价：LiteLLM moonshot/kimi-k2.7-code $0.95/$4/$0.19。本地 cordis.patch.yml 的显示名亦为 Kimi-K2.7-Code。"
+    },
+    {
+      "model": "kimi-k2.6",
+      "provider": "moonshot",
+      "tiers": {
+        "input": 0.95,
+        "output": 4,
+        "cacheRead": 0.16,
+        "cacheWrite": null
+      },
+      "per": "MTok",
+      "priceMode": "cross-verified",
+      "sourceUrl": "https://openrouter.ai/moonshotai/kimi-k2.6",
+      "notes": "双结构化源精确一致：OpenRouter moonshotai/kimi-k2.6 = LiteLLM moonshot/kimi-k2.6，均 $0.95/$4/$0.16。"
+    },
+    {
+      "model": "minimax-m3",
+      "provider": "minimax",
+      "tiers": {
+        "input": 0.3,
+        "output": 1.2,
+        "cacheRead": 0.06,
+        "cacheWrite": null
+      },
+      "per": "MTok",
+      "priceMode": "cross-verified",
+      "sourceUrl": "https://openrouter.ai/minimax/minimax-m3",
+      "notes": "多源精确一致：OpenRouter minimax/minimax-m3 = LiteLLM minimax/MiniMax-M3 = fireworks = novita = together，均 $0.30/$1.20/$0.06。"
+    },
+    {
+      "model": "gpt-6-astra",
+      "provider": "openai",
+      "tiers": {
+        "input": 10,
+        "output": 50,
+        "cacheRead": 1,
+        "cacheWrite": 12.5
+      },
+      "per": "MTok",
+      "priceMode": "cross-verified",
+      "sourceUrl": "https://openrouter.ai/openai/gpt-6-astra",
+      "notes": "多源一致：OpenRouter = LiteLLM 原生 gpt-6-astra = Azure 条目，均 $10/$50/$1/$12.5。Azure us/eu 区域 +10%。OpenAI 官网定价页未抓（JS 重渲染）。"
+    },
+    {
+      "model": "gpt-5.6-sol",
+      "provider": "openai",
+      "tiers": {
+        "input": 2,
+        "output": 10,
+        "cacheRead": 0.2,
+        "cacheWrite": 2.5
+      },
+      "per": "MTok",
+      "priceMode": "single-source",
+      "sourceUrl": "https://openrouter.ai/openai/gpt-5.6-sol",
+      "notes": "【待确认·有分歧】本条取 OpenRouter 值 $2/$10/$0.2/$2.5。⚠️ LiteLLM 原生 gpt-5.6-sol 与 Azure 条目均为 $4.00/$20.00/$0.40/$5.00（正好 2 倍）——OpenRouter 似为促销价。若按官方口径计费应翻倍。"
+    },
+    {
+      "model": "gpt-5.5",
+      "provider": "openai",
+      "tiers": {
+        "input": 5,
+        "output": 30,
+        "cacheRead": 0.5,
+        "cacheWrite": null
+      },
+      "per": "MTok",
+      "priceMode": "cross-verified",
+      "sourceUrl": "https://openrouter.ai/openai/gpt-5.5",
+      "notes": "多源一致：OpenRouter = LiteLLM gpt-5.5 = Azure，均 $5/$30/$0.5。"
+    },
+    {
+      "model": "gpt-5.4",
+      "provider": "openai",
+      "tiers": {
+        "input": 2.5,
+        "output": 15,
+        "cacheRead": 0.25,
+        "cacheWrite": null
+      },
+      "per": "MTok",
+      "priceMode": "cross-verified",
+      "sourceUrl": "https://openrouter.ai/openai/gpt-5.4",
+      "notes": "多源一致：OpenRouter = LiteLLM gpt-5.4 = Azure，均 $2.5/$15/$0.25。"
     },
     {
       "model": "gpt-5.6-terra",
@@ -177,7 +473,7 @@
       "per": "MTok",
       "priceMode": "cross-verified",
       "sourceUrl": "https://openrouter.ai/openai/gpt-5.6-luna",
-      "notes": "双结构化源一致：OpenRouter = LiteLLM gpt-5.6-luna 均 $0.2/$1.2/$0.02/$0.25。同族另有 sol 档 $2/$10（OR 与 LiteLLM 亦一致）。OpenAI 官网定价页未抓。"
+      "notes": "双结构化源一致：OpenRouter = LiteLLM gpt-5.6-luna 均 $0.2/$1.2/$0.02/$0.25。⚠️ 勘误：同族 sol 档并非全源 $2/$10——该值只见于 LiteLLM 的 openrouter 镜像条目，LiteLLM 原生 gpt-5.6-sol 与 Azure 均为 $4/$20（见 gpt-5.6-sol 条）。OpenAI 官网定价页未抓。"
     },
     {
       "model": "qwen-max",
