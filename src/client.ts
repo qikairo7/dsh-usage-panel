@@ -163,6 +163,15 @@ import type {
 				mainAgent: '主会话',
 				subAgent: '子 Agent',
 				timeseriesTitle: '每日趋势分布',
+				timeseriesTitleWeek: '每周趋势分布',
+				timeseriesTitleMonth: '每月趋势分布',
+				trendModelAll: '全部模型',
+				trendModelLabel: '模型',
+				legendUncachedInput: '未缓存输入',
+				legendCacheRead: '缓存读取（命中）',
+				legendCacheWrite: '缓存写入',
+				legendOutput: '输出',
+				cacheHitLine: '命中率',
 				toggleTokens: 'Tokens',
 				toggleCost: '费用 (¥)',
 				toggleCalls: '调用量',
@@ -244,6 +253,15 @@ import type {
 				mainAgent: 'Main Session',
 				subAgent: 'Subagent',
 				timeseriesTitle: 'Daily Trend Distribution',
+				timeseriesTitleWeek: 'Weekly Trend Distribution',
+				timeseriesTitleMonth: 'Monthly Trend Distribution',
+				trendModelAll: 'All models',
+				trendModelLabel: 'Model',
+				legendUncachedInput: 'Uncached input',
+				legendCacheRead: 'Cache read (hit)',
+				legendCacheWrite: 'Cache write',
+				legendOutput: 'Output',
+				cacheHitLine: 'Hit rate',
 				toggleTokens: 'Tokens',
 				toggleCost: 'Cost (¥)',
 				toggleCalls: 'Calls',
@@ -551,6 +569,40 @@ import type {
   display: flex;
   flex-direction: column;
   margin-top: 8px;
+}
+/* Model picker for the trend chart. Full-width so a long model name has room,
+   matching the existing filter inputs above the detail table. */
+.dup-chart-model-row {
+  display: flex;
+  align-items: center;
+  margin-top: 10px;
+}
+.dup-chart-model-row .dup-input {
+  width: 100%;
+  min-width: 0;
+  font-size: 12px;
+  padding: 5px 8px;
+}
+/* Composition legend: wraps in a narrow pane instead of overflowing. */
+.dup-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin-top: 8px;
+  font-size: 10px;
+  color: var(--dsw-text-tertiary, #86909C);
+}
+.dup-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.dup-legend-item i {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex: none;
 }
 /* The SVG keeps its intrinsic aspect ratio (no preserveAspectRatio="none"),
    so circles stay round and stroke widths stay even at any pane width. */
@@ -868,27 +920,61 @@ import type {
 
 		// ─── Component: Interactive Timeseries SVG Chart ───────────────────────────
 
-		function TimeseriesChart(props: { rows: TimeseriesRow[]; t: (key: string) => string }) {
-			const { rows, t } = props;
+		function TimeseriesChart(props: {
+			rows: TimeseriesRow[];
+			t: (key: string) => string;
+			title: string;
+			models: string[];
+			trendModel: string;
+			onModelChange: (model: string) => void;
+			modelNames: Record<string, string>;
+		}) {
+			const { rows, t, title, models, trendModel, onModelChange, modelNames } = props;
 			const [metric, setMetric] = React.useState('tokens' as 'tokens' | 'cost' | 'calls');
 			const [hoveredIdx, setHoveredIdx] = React.useState(null as number | null);
 
+			const selector = React.createElement(
+				'div',
+				{ className: 'dup-chart-model-row' },
+				React.createElement('select', {
+					className: 'dup-input',
+					value: trendModel,
+					'aria-label': t('trendModelLabel'),
+					onChange: (e: { target: { value: string } }) => onModelChange(e.target.value)
+				}, React.createElement('option', { value: '' }, t('trendModelAll')),
+					models.map((m: string) =>
+						React.createElement('option', { key: m, value: m }, modelNames[m] || m)
+					)
+				)
+			);
+
 			if (!rows || rows.length === 0) {
-				return React.createElement('div', { className: 'dup-empty-desc', style: { padding: '20px 0', textAlign: 'center' } }, t('emptyList'));
+				return React.createElement('div', { className: 'dup-card dup-chart-card' },
+					React.createElement('div', { className: 'dup-card-header' },
+						React.createElement('span', { className: 'dup-card-title' }, title)
+					),
+					selector,
+					React.createElement('div', { className: 'dup-empty-desc', style: { padding: '20px 0', textAlign: 'center' } }, t('emptyList'))
+				);
 			}
 
-			const values = rows.map((r: TimeseriesRow) => {
-				if (metric === 'tokens') return r.tokens;
-				if (metric === 'cost') return r.cost;
-				return r.calls;
-			});
-			const maxVal = Math.max(...values, 1);
+			// A bucket's token total split by what it actually was: fresh input,
+			// cache read (the hit), cache write, and generated output.
+			const series = [
+				{ key: 'input', label: t('legendUncachedInput'), color: '#0A84FF' },
+				{ key: 'cacheRead', label: t('legendCacheRead'), color: '#30D158' },
+				{ key: 'cacheWrite', label: t('legendCacheWrite'), color: '#FF9F0A' },
+				{ key: 'output', label: t('legendOutput'), color: '#BF5AF2' }
+			] as const;
 
-			// Fixed viewBox coordinate system. The SVG is scaled uniformly by
-			// the browser (no preserveAspectRatio="none"), so circles stay
-			// circular and strokes keep an even width at any pane width.
+			const composed = metric === 'tokens';
+			const totals = rows.map((r: TimeseriesRow) =>
+				metric === 'tokens' ? r.tokens : metric === 'cost' ? r.cost : r.calls
+			);
+			const maxVal = Math.max(...totals, 1);
+
 			const width = 340;
-			const height = 132;
+			const height = composed ? 152 : 132;
 			const padLeft = 48;
 			const padRight = 10;
 			const padTop = 10;
@@ -903,31 +989,32 @@ import type {
 				return formatNumber(v);
 			};
 
-			const points = rows.map((r, i) => {
-				// A single bucket has no span to divide: centre it instead of
-				// collapsing the series onto the left edge.
-				const x = rows.length > 1 ? padLeft + (i / (rows.length - 1)) * chartW : padLeft + chartW / 2;
-				const val = metric === 'tokens' ? r.tokens : metric === 'cost' ? r.cost : r.calls;
-				const y = baseY - (val / maxVal) * chartH;
-				return { x, y, row: r, val };
-			});
+			const xs = rows.map((_r, i) =>
+				rows.length > 1 ? padLeft + (i / (rows.length - 1)) * chartW : padLeft + chartW / 2
+			);
+			// Bars fill the gap between neighbours so adjacent buckets read as a
+			// continuous band; a lone bucket gets a legible fixed width.
+			const span = rows.length > 1 ? (chartW / rows.length) * 0.62 : 18;
+			const yOf = (v: number): number => baseY - (v / maxVal) * chartH;
 
-			// Straight segments: data-accurate, and they cannot overshoot the
-			// way interpolated control points can.
+			const points = rows.map((r, i) => ({
+				x: xs[i],
+				y: yOf(totals[i]),
+				row: r,
+				val: totals[i]
+			}));
+
 			let pathD = '';
 			let areaD = '';
-			if (points.length > 1) {
+			if (points.length > 1 && !composed) {
 				pathD = `M ${points[0].x} ${points[0].y}`;
 				for (let i = 1; i < points.length; i++) pathD += ` L ${points[i].x} ${points[i].y}`;
 				const lastP = points[points.length - 1];
 				areaD = `${pathD} L ${lastP.x} ${baseY} L ${points[0].x} ${baseY} Z`;
 			}
 
-			// Y gridlines: 0 / mid / max, each labelled so the curve is readable.
 			const yTicks = [0, 0.5, 1].map((f) => ({ f, y: baseY - f * chartH, val: maxVal * f }));
 
-			// X labels: first, last, and up to two in between — deduped so a
-			// short series never prints the same date twice.
 			const xLabelIdx: number[] = [];
 			const labelSlots = Math.min(4, rows.length);
 			for (let k = 0; k < labelSlots; k++) {
@@ -977,6 +1064,7 @@ import type {
 						)
 					)
 				),
+				selector,
 				React.createElement(
 					'div',
 					{ className: 'dup-chart-container' },
@@ -1033,9 +1121,62 @@ import type {
 							)
 						),
 						// Area fill
-						areaD && React.createElement('path', { d: areaD, fill: 'url(#dup-area-grad)' }),
-						// Line stroke
-						pathD && React.createElement('path', { d: pathD, fill: 'none', stroke: '#007AFF', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' }),
+						composed
+							? // Stacked composition: each bar is one bucket, split into
+								// what the tokens actually were.
+								rows.map((r: TimeseriesRow, i: number) => {
+									const parts = series.map((s) => ({ ...s, v: (r as unknown as Record<string, number>)[s.key] ?? 0 }));
+									const total = parts.reduce((a, b) => a + b.v, 0);
+									let cursor = 0;
+									return React.createElement(
+										'g',
+										{ key: `b${i}` },
+										parts.map((p) => {
+											const h = total > 0 ? (p.v / maxVal) * chartH : 0;
+											const yTop = baseY - cursor - h;
+											cursor += h;
+											if (h <= 0) return null;
+											return React.createElement('rect', {
+												key: p.key,
+												x: xs[i] - span / 2,
+												y: yTop,
+												width: span,
+												height: h,
+												fill: p.color,
+												opacity: hoveredIdx === null || hoveredIdx === i ? 1 : 0.45
+											});
+										}),
+										// Cache-hit rate overlaid as a dotted line, so the
+										// composition and the efficiency read together.
+										React.createElement('line', {
+											x1: xs[i] - span / 2,
+											y1: baseY - ((r.input + r.cacheRead) > 0 ? (r.cacheRead / (r.input + r.cacheRead)) * chartH : 0),
+											x2: xs[i] + span / 2,
+											y2: baseY - ((r.input + r.cacheRead) > 0 ? (r.cacheRead / (r.input + r.cacheRead)) * chartH : 0),
+											stroke: '#30D158',
+											strokeWidth: 1.5,
+											strokeDasharray: '2 2'
+										}),
+										// Invisible full-height hit target: a 3px circle was
+										// too small to hover reliably on touch/trackpads.
+										React.createElement('rect', {
+											x: xs[i] - span / 2 - 3,
+											y: padTop,
+											width: span + 6,
+											height: chartH,
+											fill: 'transparent',
+											style: { cursor: 'pointer' },
+											onMouseEnter: () => setHoveredIdx(i),
+											onMouseLeave: () => setHoveredIdx(null)
+										})
+									);
+								})
+							: React.createElement(
+									'g',
+									null,
+									areaD && React.createElement('path', { d: areaD, fill: 'url(#dup-area-grad)' }),
+									pathD && React.createElement('path', { d: pathD, fill: 'none', stroke: '#007AFF', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' })
+								),
 						// X axis date labels
 						xLabelIdx.map((idx) =>
 							React.createElement(
@@ -1051,24 +1192,46 @@ import type {
 								shortDate(rows[idx].date)
 							)
 						),
-						// Points. A single bucket has no line, so its dot is drawn
-						// larger — otherwise "today" would render an empty plot.
-						points.map((p, idx) =>
-							React.createElement('circle', {
-								key: idx,
-								cx: p.x,
-								cy: p.y,
-								r: points.length === 1 ? 4 : hoveredIdx === idx ? 4.5 : 2.5,
-								fill: points.length === 1 || hoveredIdx === idx ? '#007AFF' : '#FFFFFF',
-								stroke: '#007AFF',
-								strokeWidth: 1.8,
-								style: { cursor: 'pointer', transition: 'r 120ms ease' },
-								onMouseEnter: () => setHoveredIdx(idx),
-								onMouseLeave: () => setHoveredIdx(null)
-							})
+						// Points for the non-composed metrics. A single bucket has no
+						// line, so its dot is drawn larger — otherwise "today" would
+						// render an empty plot.
+						!composed &&
+							points.map((p, idx) =>
+								React.createElement('circle', {
+									key: idx,
+									cx: p.x,
+									cy: p.y,
+									r: points.length === 1 ? 4 : hoveredIdx === idx ? 4.5 : 2.5,
+									fill: points.length === 1 || hoveredIdx === idx ? '#007AFF' : '#FFFFFF',
+									stroke: '#007AFF',
+									strokeWidth: 1.8,
+									style: { cursor: 'pointer', transition: 'r 120ms ease' },
+									onMouseEnter: () => setHoveredIdx(idx),
+									onMouseLeave: () => setHoveredIdx(null)
+								})
+							)
+					)
+				),
+				// Legend for the composition series (and the hit-rate line).
+				composed &&
+					React.createElement(
+						'div',
+						{ className: 'dup-chart-legend' },
+						series.map((s) =>
+							React.createElement(
+								'span',
+								{ key: s.key, className: 'dup-legend-item' },
+								React.createElement('i', { style: { background: s.color } }),
+								s.label
+							)
+						),
+						React.createElement(
+							'span',
+							{ className: 'dup-legend-item' },
+							React.createElement('i', { style: { background: '#30D158', opacity: 0.5 } }),
+							t('cacheHitLine')
 						)
 					)
-				)
 			);
 		}
 
@@ -1097,6 +1260,22 @@ import type {
 			const [filterSessionId, setFilterSessionId] = React.useState('');
 			const [page, setPage] = React.useState(1);
 
+			// Trend chart: which single model to plot ('' = every model).
+			const [trendModel, setTrendModel] = React.useState('');
+			const trendModels = modelBreakdown.map((r: BreakdownRow) => r.key);
+			const modelNames: Record<string, string> = {};
+			for (const m of pricing?.models ?? []) {
+				if (m.displayName) modelNames[m.model] = m.displayName;
+			}
+			// The server picks the bucket from the range; mirror it in the title
+			// so "每月" does not sit above a chart that is actually by day.
+			const trendTitle =
+				range === 'month'
+					? t('timeseriesTitleWeek')
+					: range === 'all'
+						? t('timeseriesTitleMonth')
+						: t('timeseriesTitle');
+
 			// Fetch all data for current range
 			const loadAllData = React.useCallback(
 				(silent = false) => {
@@ -1110,7 +1289,7 @@ import type {
 
 					Promise.all([
 						callRpc<SummaryResult>('summary', { range }),
-						callRpc<TimeseriesRow[]>('timeseries', { range, bucket: 'day' }),
+						callRpc<TimeseriesRow[]>('timeseries', { range, bucket: 'auto', model: trendModel || undefined }),
 						callRpc<BreakdownRow[]>('breakdown', { range, by: 'model' }),
 						callRpc<BreakdownRow[]>('breakdown', { range, by: 'session' }),
 						callRpc<DetailResult>('detail', { range, filters, page, pageSize: 20 }),
@@ -1132,7 +1311,7 @@ import type {
 							setLoading(false);
 						});
 				},
-				[range, filterModel, filterProvider, filterSessionId, page]
+				[range, filterModel, filterProvider, filterSessionId, page, trendModel]
 			);
 
 			// Immediate fetch on change
@@ -1389,7 +1568,15 @@ import type {
 					),
 
 				// 4. Daily Timeseries Trend Chart
-				React.createElement(TimeseriesChart, { rows: timeseries, t }),
+				React.createElement(TimeseriesChart, {
+					rows: timeseries,
+					t,
+					title: trendTitle,
+					models: trendModels,
+					trendModel,
+					onModelChange: setTrendModel,
+					modelNames
+				}),
 
 				// 5. Model × Provider Breakdown Table
 				React.createElement(

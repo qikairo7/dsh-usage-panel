@@ -8,12 +8,22 @@ import type {
 	BreakdownBy,
 	DetailFilters,
 	Range,
+	TimeseriesBucket,
 	UsageService
 } from '../lib/types.js';
 import { isExplicitRange } from '../lib/types.js';
 
 const RANGE_KEYWORDS = ['today', 'week', 'month', 'all'] as const;
 const BREAKDOWN_KEYS = new Set(['model', 'provider', 'session', 'origin']);
+const BUCKET_KEYWORDS: TimeseriesBucket[] = ['auto', 'day', 'week', 'month'];
+
+function parseBucket(value: unknown, at: string): TimeseriesBucket {
+	if (value === undefined || value === null) return 'auto';
+	if (typeof value !== 'string' || !BUCKET_KEYWORDS.includes(value as TimeseriesBucket)) {
+		throw new Error(`${at}: expected auto|day|week|month, got ${JSON.stringify(value)}`);
+	}
+	return value as TimeseriesBucket;
+}
 
 function parseRange(value: unknown, at: string): Range {
 	if (typeof value === 'string' && (RANGE_KEYWORDS as readonly string[]).includes(value)) {
@@ -71,12 +81,14 @@ export async function dispatchRpc(service: UsageService, endpoint: string, paylo
 			return service.summary(range) as unknown as Promise<Record<string, unknown>>;
 		}
 		case 'timeseries': {
-			const p = (payload ?? {}) as { range?: unknown; bucket?: unknown };
+			const p = (payload ?? {}) as { range?: unknown; bucket?: unknown; model?: unknown };
 			const range = parseRange(p.range, 'timeseries.range');
-			if (p.bucket !== undefined && p.bucket !== 'day') {
-				throw new Error(`timeseries.bucket: only "day" is supported, got ${JSON.stringify(p.bucket)}`);
+			const bucket = parseBucket(p.bucket, 'timeseries.bucket');
+			if (p.model !== undefined && p.model !== null && typeof p.model !== 'string') {
+				throw new Error(`timeseries.model: expected a string, got ${JSON.stringify(p.model)}`);
 			}
-			return service.timeseries(range, 'day') as unknown as Promise<Record<string, unknown>>;
+			const model = typeof p.model === 'string' && p.model.trim() ? p.model.trim() : undefined;
+			return service.timeseries(range, bucket, model) as unknown as Promise<Record<string, unknown>>;
 		}
 		case 'breakdown': {
 			const p = (payload ?? {}) as { range?: unknown; by?: unknown };

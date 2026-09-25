@@ -59,11 +59,20 @@ export interface SummaryResult {
 	};
 }
 
+/** How a timeseries point groups calls. 'auto' is resolved from the range. */
+export type TimeseriesBucket = 'auto' | 'day' | 'week' | 'month';
+
 export interface TimeseriesRow {
+	/** Bucket start: YYYY-MM-DD, or YYYY-MM for month buckets. */
 	date: string;
 	tokens: number;
 	cost: number;
 	calls: number;
+	/** Token composition, so the chart can show cache vs fresh vs output. */
+	input: number;
+	cacheRead: number;
+	cacheWrite: number;
+	output: number;
 }
 
 export type BreakdownBy = 'model' | 'provider' | 'session' | 'origin';
@@ -157,7 +166,7 @@ export interface LedgerResult {
 /** The host-side service the RPC layer dispatches to (SPEC §3 endpoints). */
 export interface UsageService {
 	summary(range: Range): Promise<SummaryResult>;
-	timeseries(range: Range, bucket: 'day'): Promise<TimeseriesRow[]>;
+	timeseries(range: Range, bucket: TimeseriesBucket, model?: string): Promise<TimeseriesRow[]>;
 	breakdown(range: Range, by: BreakdownBy): Promise<BreakdownRow[]>;
 	detail(range: Range, filters: DetailFilters, page: number, pageSize: number): Promise<DetailResult>;
 	pricing(): Promise<PricingResult>;

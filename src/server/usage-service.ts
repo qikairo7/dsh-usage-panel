@@ -21,6 +21,7 @@ import type {
 	Range,
 	RefreshResult,
 	SummaryResult,
+	TimeseriesBucket,
 	TimeseriesRow,
 	Tokens,
 	UsageService
@@ -82,6 +83,46 @@ function dayBucket(ts: number): string {
 	const m = String(d.getMonth() + 1).padStart(2, '0');
 	const day = String(d.getDate()).padStart(2, '0');
 	return `${d.getFullYear()}-${m}-${day}`;
+}
+
+/** Local-time YYYY-MM bucket key (month granularity). */
+function monthBucket(ts: number): string {
+	const d = new Date(ts);
+	return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+/**
+ * ISO week (Mon–Sun) start as a YYYY-MM-DD key. Week buckets keep a
+ * "trend over weeks" readable instead of collapsing a month into 30 points.
+ */
+function weekBucket(ts: number): string {
+	const d = new Date(ts);
+	d.setHours(0, 0, 0, 0);
+	// JS getDay(): 0=Sun..6=Sat; shift so Monday is the week's first day.
+	const shift = (d.getDay() + 6) % 7;
+	d.setDate(d.getDate() - shift);
+	const m = String(d.getMonth() + 1).padStart(2, '0');
+	const day = String(d.getDate()).padStart(2, '0');
+	return `${d.getFullYear()}-${m}-${day}`;
+}
+
+/**
+ * Pick a bucket width the range actually needs. A day-wide window bucketed
+ * hourly-or-daily is one point either way, while "all history" bucketed daily
+ * would be hundreds of unreadable points.
+ */
+function resolveBucket(bucket: TimeseriesBucket, range: Range): 'day' | 'week' | 'month' {
+	if (bucket !== 'auto') return bucket;
+	if (isExplicitRange(range)) {
+		const spanDays = (Date.parse(range.to) - Date.parse(range.from)) / 86_400_000;
+		if (spanDays > 180) return 'month';
+		if (spanDays > 21) return 'week';
+		return 'day';
+	}
+	if (range === 'today') return 'day';
+	if (range === 'week') return 'day';
+	if (range === 'month') return 'week';
+	return 'month';
 }
 
 export function createUsageService(options: UsageServiceOptions): UsageService {
@@ -185,23 +226,39 @@ export function createUsageService(options: UsageServiceOptions): UsageService {
 			};
 		},
 
-		async timeseries(range: Range, bucket: 'day'): Promise<TimeseriesRow[]> {
-			if (bucket !== 'day') throw new Error(`timeseries: unsupported bucket ${JSON.stringify(bucket)}`);
+		async timeseries(range: Range, bucket: TimeseriesBucket, model?: string): Promise<TimeseriesRow[]> {
 			await ensureFresh();
 			const priceEngine = await ensureEngine();
 			const { from, to } = resolveRange(range);
-			const records = recordsInRange(from, to);
-			const rows = new Map<string, { tokens: number; cost: number; calls: number }>();
+			const effective = resolveBucket(bucket, range);
+			const keyFor = effective === 'month' ? monthBucket : effective === 'week' ? weekBucket : dayBucket;
+			const records = model === undefined ? recordsInRange(from, to) : recordsInRange(from, to).filter((r) => r.model === model);
+			interface Acc {
+				tokens: number;
+				cost: number;
+				calls: number;
+				input: number;
+				cacheRead: number;
+				cacheWrite: number;
+				output: number;
+			}
+			const rows = new Map<string, Acc>();
 			for (const r of records) {
-				const key = dayBucket(r.ts);
-				const row = rows.get(key) ?? { tokens: 0, cost: 0, calls: 0 };
+				const key = keyFor(r.ts);
+				const row = rows.get(key) ?? { tokens: 0, cost: 0, calls: 0, input: 0, cacheRead: 0, cacheWrite: 0, output: 0 };
 				row.tokens += r.usage.totalTokens;
+				row.input += r.usage.inputTokens;
+				row.cacheRead += r.usage.cacheReadTokens;
+				row.cacheWrite += r.usage.cacheWriteTokens;
+				row.output += r.usage.outputTokens;
 				row.calls += 1;
 				const priced = priceEngine.priceCall(r.usage, r.provider, r.model);
 				if (priced.cost !== null) row.cost += priced.cost;
 				rows.set(key, row);
 			}
-			return [...rows.entries()].map(([date, v]) => ({ date, ...v })).sort((a, b) => (a.date < b.date ? -1 : 1));
+			return [...rows.entries()]
+				.map(([date, v]) => ({ date, ...v }))
+				.sort((a, b) => (a.date < b.date ? -1 : 1));
 		},
 
 		async breakdown(range: Range, by: BreakdownBy): Promise<BreakdownRow[]> {

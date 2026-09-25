@@ -119,6 +119,47 @@ test('invariant: detail sums == summary (synthesized multi-session archive)', as
 	const ts = await svc.timeseries('all', 'day');
 	assert.equal(ts.length, 1);
 	assert.equal(ts[0].calls, 4);
+	// token composition sums to the bucket total, so the chart cannot drift from it
+	assert.equal(ts[0].input + ts[0].cacheRead + ts[0].cacheWrite + ts[0].output, ts[0].tokens);
+});
+
+test('timeseries: bucket width follows the range; a single model can be isolated', async () => {
+	const env = makeEnv(test);
+	const dir = path.join(env.sessionsDir, 'slug-x', 'session-aaa');
+	mkdirSync(dir, { recursive: true });
+	// Two calls on the same local day: one on model-b, one on model-c.
+	writeFileSync(path.join(dir, 'session.v4.jsonl.zstd'), archiveOf([
+		header('session-aaa'),
+		usageRow(2, 1700000001000, 1, 1, U(200, 50, 0), 'prov-sub', 'model-b'),
+		usageRow(3, 1700000002000, 1, 2, U(50, 25, 25), 'prov-x', 'model-c')
+	]));
+	const svc = serviceOf(env);
+
+	// Every fixture sits on one local day, so month buckets collapse them to one row.
+	const byMonth = await svc.timeseries('all', 'auto');
+	assert.equal(byMonth.length, 1, 'a day-wide history bucketed by month is one point');
+	assert.equal(byMonth[0].date.length, 7, 'month bucket keys as YYYY-MM');
+	assert.equal(byMonth[0].calls, 2);
+
+	// Explicit day buckets still work when asked for.
+	const byDay = await svc.timeseries('all', 'day');
+	assert.equal(byDay[0].date.length, 10, 'day bucket keys as YYYY-MM-DD');
+
+	// Composition is preserved across bucket widths.
+	assert.equal(byMonth[0].input, 250);
+	assert.equal(byMonth[0].output, 75);
+	assert.equal(byMonth[0].cacheRead, 25);
+	assert.equal(byMonth[0].input + byMonth[0].cacheRead + byMonth[0].cacheWrite + byMonth[0].output, byMonth[0].tokens);
+
+	// Per-model trend: model-b alone is a single call.
+	const onlyB = await svc.timeseries('all', 'day', 'model-b');
+	assert.equal(onlyB.length, 1);
+	assert.equal(onlyB[0].calls, 1, 'model filter restricts the bucket to that model');
+	assert.equal(onlyB[0].tokens, 250);
+
+	// An unknown model yields no rows — never a silent "everything".
+	const none = await svc.timeseries('all', 'day', 'no-such-model');
+	assert.equal(none.length, 0);
 });
 
 test('invariant: incremental append scan == full reparse (real fixture split)', async () => {
