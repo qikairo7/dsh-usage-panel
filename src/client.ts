@@ -1727,7 +1727,7 @@ import type {
 
 		// ─── Cordis Client Lifecycle Entry ─────────────────────────────────────────
 
-		const inject = ['slots', 'timer', 'locale', 'sidebarRightTabs', 'sidebarRight'];
+		const inject = ['slots', 'timer', 'connection', 'locale', 'sidebarRightTabs', 'sidebarRight'];
 
 		function apply(ctx: any) {
 			// Capture the runtime context for callRpc: connection.rpc.call lives
