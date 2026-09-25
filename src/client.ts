@@ -60,41 +60,26 @@ import type {
 		const SIDEBAR_TAB_KIND = 'dsh-usage-panel';
 		const USD_TO_CNY = 7.23;
 
-		// ─── RPC Helper ─────────────────────────────────────────────────────────────
+	// ─── RPC Helper ─────────────────────────────────────────────────────────────
+	// Rides the Connection client's generic-RPC caller over the authenticated
+	// /api channel — the same three-argument convention the quota-panel client
+	// uses (channel, method, payload). A raw fetch to /api/<method> is NOT a
+	// plain HTTP route (404 there); the connection service owns the framing.
+	let runtimeCtx: any = null;
 
-		function callRpc<T>(endpoint: string, payload: unknown = {}): Promise<T> {
-			const rpcId = 'up-' + Math.random().toString(36).slice(2, 10);
-			const method = `dsh-usage-panel/${endpoint}`;
-			const url = `/api/${method}`;
-
-			return fetch(url, {
-				method: 'POST',
-				headers: {
-					'content-type': 'application/json',
-					'cache-control': 'no-store'
-				},
-				body: JSON.stringify({
-					type: 'client-request',
-					rpcId,
-					method,
-					payload
-				})
-			}).then(async (res) => {
-				if (!res.ok) {
-					throw new Error(`RPC transport error HTTP ${res.status} (${res.statusText})`);
-				}
-				const envelope = await res.json();
-				if (!envelope || envelope.type !== 'server-response') {
-					throw new Error(`Invalid RPC response envelope from ${endpoint}`);
-				}
-				const result = envelope.result;
-				if (result && typeof result === 'object' && 'ok' in result && result.ok === false) {
-					const err = result.error || {};
-					throw new Error(`[${err.code || 'endpoint-error'}] ${err.message || 'Unknown RPC error'}`);
-				}
-				return result as T;
-			});
+	function callRpc<T>(endpoint: string, payload: unknown = {}): Promise<T> {
+		const rpc = runtimeCtx?.connection?.rpc;
+		if (rpc === null || rpc === undefined || typeof rpc.call !== 'function') {
+			return Promise.reject(new Error('RPC transport unavailable: connection.rpc.call missing (host connection service not injected)'));
 		}
+		return rpc.call('/api', `dsh-usage-panel/${endpoint}`, payload).then((result: any) => {
+			if (result && typeof result === 'object' && 'ok' in result && result.ok === false) {
+				const err = result.error || {};
+				throw new Error(`[${err.code || 'endpoint-error'}] ${err.message || 'Unknown RPC error'}`);
+			}
+			return result as T;
+		});
+	}
 
 		// ─── Formatters ────────────────────────────────────────────────────────────
 
@@ -1745,6 +1730,9 @@ import type {
 		const inject = ['slots', 'timer', 'locale', 'sidebarRightTabs', 'sidebarRight'];
 
 		function apply(ctx: any) {
+			// Capture the runtime context for callRpc: connection.rpc.call lives
+			// on the injected ctx (fork precedent `runtimeCtx = ctx`).
+			runtimeCtx = ctx;
 			// 1. Inject Stylesheet
 			ctx.effect(() => {
 				const tag = document.createElement('style');
