@@ -58,7 +58,13 @@ import type {
 		const NS = 'usage-panel';
 		const SIDEBAR_TAB_ID = 'dsh-usage-panel';
 		const SIDEBAR_TAB_KIND = 'dsh-usage-panel';
-		const USD_TO_CNY = 7.23;
+		// USD → CNY 换算系数。必须与价格快照 data/prices.snapshot.json 的
+		// `currency` 字段一致：该快照记录「1 USD = 6.722655 CNY，来源
+		// open.er-api.com，2026-09-24 快照，证据 reports/probes/fx-usd.json」。
+		// 校验方式：DeepSeek 官方原生价 ¥2/百万 token，快照记为 0.2975 USD，
+		// 0.2975 × 6.722655 = 2.0000 ✓（用 7.23 会得 2.15，虚高 7.5%）。
+		// 快照更新时此处需同步。
+		const USD_TO_CNY = 6.722655;
 
 	// ─── RPC Helper ─────────────────────────────────────────────────────────────
 	// Plain same-origin HTTP against the host half's own web-server routes —
@@ -100,13 +106,6 @@ import type {
 			if (n < 1_000_000) return (n / 1000).toFixed(1) + 'k';
 			if (n < 1_000_000_000) return (n / 1_000_000).toFixed(2) + 'M';
 			return (n / 1_000_000_000).toFixed(2) + 'B';
-		}
-
-		function formatCostUsd(usd: number | null | undefined): string {
-			if (usd === null || usd === undefined || Number.isNaN(usd)) return '$0.00';
-			if (usd === 0) return '$0.00';
-			if (usd < 0.01) return '$' + usd.toFixed(4);
-			return '$' + usd.toFixed(2);
 		}
 
 		function formatCostCny(usd: number | null | undefined): string {
@@ -165,7 +164,7 @@ import type {
 				subAgent: '子 Agent',
 				timeseriesTitle: '每日趋势分布',
 				toggleTokens: 'Tokens',
-				toggleCost: '费用 ($)',
+				toggleCost: '费用 (¥)',
 				toggleCalls: '调用量',
 				breakdownTitle: '模型 × Provider 分布明细',
 				colModel: '模型',
@@ -246,7 +245,7 @@ import type {
 				subAgent: 'Subagent',
 				timeseriesTitle: 'Daily Trend Distribution',
 				toggleTokens: 'Tokens',
-				toggleCost: 'Cost ($)',
+				toggleCost: 'Cost (¥)',
 				toggleCalls: 'Calls',
 				breakdownTitle: 'Model × Provider Breakdown',
 				colModel: 'Model',
@@ -322,13 +321,14 @@ import type {
   line-height: 1.45;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  height: 100%;
-  overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: var(--dsw-text-disabled, #C9CDD4) transparent;
+  /* Fill the host pane but never force a height the host did not allocate:
+     height:100% inside an auto-height parent collapsed the content, and
+     overflow-y:auto then produced a second scrollbar. min-height:0
+     lets this flex child shrink correctly inside the host's scroller. */
+  min-height: 0;
+  width: 100%;
+  overflow-x: hidden;
 }
-.dup-root::-webkit-scrollbar { width: 5px; }
-.dup-root::-webkit-scrollbar-thumb { background: var(--dsw-text-disabled, #C9CDD4); border-radius: 3px; }
 
 /* Translucent Glass Card */
 .dup-card {
@@ -341,12 +341,19 @@ import type {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03), 0 4px 12px rgba(0, 0, 0, 0.02);
   transition: transform 120ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 120ms ease;
   position: relative;
-  overflow: hidden;
+  /* Deliberately NOT overflow:hidden — that clipped long labels and wrapped
+     text instead of letting the card grow. Cards size to their content. */
+  min-width: 0;
+  box-sizing: border-box;
 }
+/* Header holds a title plus (usually) a segmented control. In a ~300px pane
+   the two collided and the title ran under the buttons — allow wrapping and
+   let the title shrink instead. */
 .dup-card-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   margin-bottom: 12px;
   gap: 8px;
 }
@@ -358,6 +365,8 @@ import type {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .dup-card-title-icon {
   color: var(--dsw-color-primary, #007AFF);
@@ -398,16 +407,18 @@ import type {
   font-weight: 600;
 }
 
-/* KPI Summary Cards Grid */
+/* KPI Summary Cards Grid — auto-fit so a narrow sidebar drops to one column
+   instead of squeezing two and clipping the 22px value + long sub-lines. */
 .dup-kpi-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 10px;
 }
 .dup-kpi-card {
   padding: 12px 14px;
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 .dup-kpi-label {
   font-size: 11px;
@@ -424,6 +435,8 @@ import type {
   font-variant-numeric: tabular-nums;
   color: var(--dsw-text-title, #1D2129);
   line-height: 1.2;
+  /* Long values (large ¥ amounts) shrink/wrap instead of being clipped. */
+  overflow-wrap: anywhere;
 }
 .dup-kpi-sub {
   font-size: 11px;
@@ -432,7 +445,9 @@ import type {
   font-variant-numeric: tabular-nums;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 4px;
+  overflow-wrap: anywhere;
 }
 .dup-kpi-pill {
   display: inline-block;
@@ -513,9 +528,17 @@ import type {
 .dup-split-legend {
   display: flex;
   justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 6px 12px;
   font-size: 11px;
   color: var(--dsw-text-tertiary, #86909C);
   font-variant-numeric: tabular-nums;
+}
+/* Each legend side may shrink and wrap instead of colliding with the other. */
+.dup-split-legend > * {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 /* SVG Timeseries Chart */
@@ -525,19 +548,25 @@ import type {
 }
 .dup-chart-container {
   width: 100%;
-  height: 150px;
-  position: relative;
+  display: flex;
+  flex-direction: column;
   margin-top: 8px;
 }
 .dup-chart-svg {
   width: 100%;
-  height: 100%;
+  height: 150px;
   overflow: visible;
+  display: block;
 }
+/* Sits ABOVE the plot instead of on top of it: reserving its own row means
+   the tooltip never covers the line/area it is describing. The row is always
+   rendered (empty when nothing is hovered) so the chart never jumps. */
 .dup-chart-tooltip {
-  position: absolute;
-  top: 6px;
-  right: 8px;
+  position: static;
+  align-self: flex-start;
+  margin-bottom: 6px;
+  min-height: 20px;
+  box-sizing: border-box;
   background: var(--dsw-surface, rgba(255, 255, 255, 0.95));
   border: 1px solid var(--dsw-border, rgba(0, 0, 0, 0.1));
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
@@ -547,12 +576,19 @@ import type {
   color: var(--dsw-text-title, #1D2129);
   pointer-events: none;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-/* Tables & Lists */
+/* Tables & Lists — the wrapper scrolls horizontally so a narrow pane never
+   clips columns; cells keep their own wrapping rules. */
 .dup-table-wrap {
   width: 100%;
+  max-width: 100%;
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
   margin-top: 6px;
 }
 .dup-table {
@@ -919,14 +955,19 @@ import type {
 				React.createElement(
 					'div',
 					{ className: 'dup-chart-container' },
-					hoveredPoint &&
-						React.createElement(
-							'div',
-							{ className: 'dup-chart-tooltip' },
-							React.createElement('strong', null, hoveredPoint.row.date),
-							' : ',
-							metric === 'tokens' ? formatTokens(hoveredPoint.val) : metric === 'cost' ? formatCostUsd(hoveredPoint.val) : formatNumber(hoveredPoint.val) + ' 次'
-						),
+					// Always rendered so the chart never shifts down when the
+					// pointer enters/leaves a data point.
+					React.createElement(
+						'div',
+						{ className: 'dup-chart-tooltip' },
+						hoveredPoint
+							? [
+									React.createElement('strong', { key: 'd' }, hoveredPoint.row.date),
+									' : ',
+									metric === 'tokens' ? formatTokens(hoveredPoint.val) : metric === 'cost' ? formatCostCny(hoveredPoint.val) : formatNumber(hoveredPoint.val) + ' 次'
+								]
+							: ''
+					),
 					React.createElement(
 						'svg',
 						{ className: 'dup-chart-svg', viewBox: `0 0 ${width} ${height}`, preserveAspectRatio: 'none' },
@@ -1215,7 +1256,7 @@ import type {
 							React.createElement(
 								'span',
 								{ className: 'dup-kpi-sub' },
-								`${formatCostUsd(summary.cost.total)} (USD)`
+								`按 1 USD = ${USD_TO_CNY} CNY 换算`
 							)
 						),
 						// Cache Hit Rate
