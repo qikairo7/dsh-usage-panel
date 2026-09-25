@@ -145,6 +145,10 @@ import type {
 				tabTitle: '用量看板',
 				rangeToday: '今日',
 				rangeWeek: '本周',
+				rangeCustom: '自定义',
+				customFrom: '开始日期',
+				customTo: '结束日期',
+				customApply: '应用',
 				rangeMonth: '本月',
 				rangeAll: '全部',
 				kpiTotalTokens: '总 Tokens',
@@ -242,6 +246,10 @@ import type {
 				tabTitle: 'Usage Dashboard',
 				rangeToday: 'Today',
 				rangeWeek: 'This Week',
+				rangeCustom: 'Custom',
+				customFrom: 'Start date',
+				customTo: 'End date',
+				customApply: 'Apply',
 				rangeMonth: 'This Month',
 				rangeAll: 'All Time',
 				kpiTotalTokens: 'Total Tokens',
@@ -1011,6 +1019,45 @@ import type {
     transform: none;
   }
 }
+/* Responsive: model/provider pair shares a row on wide screens only. */
+.dup-root .dup-cols {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--dup-space-3);
+  min-width: 0;
+}
+@media (min-width: 1100px) {
+  .dup-root .dup-cols {
+    grid-template-columns: 1fr 1fr;
+    align-items: start;
+  }
+}
+@media (max-width: 860px) {
+  .dup-root {
+    padding: var(--dup-space-3);
+    gap: var(--dup-space-2);
+  }
+  .dup-root .dup-kpi-val {
+    font-size: 20px;
+  }
+  .dup-root .dup-card {
+    padding: var(--dup-space-3);
+  }
+}
+/* Custom date-range row and always-scrollable tables. */
+.dup-root .dup-custom-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--dup-space-2);
+}
+.dup-root .dup-custom-row .dup-input {
+  flex: 0 1 150px;
+  min-width: 0;
+}
+.dup-root .dup-table-wrap {
+  overflow-x: auto;
+}
 `;
 
 		// ─── SVG Icons ─────────────────────────────────────────────────────────────
@@ -1456,6 +1503,18 @@ import type {
 			const [trendModel, setTrendModel] = React.useState('');
 			// Request log: row key of the currently expanded per-call breakdown.
 			const [expandedRow, setExpandedRow] = React.useState(null as string | null);
+			// Custom date range: YYYY-MM-DD inputs applied as an explicit range.
+			const [customOpen, setCustomOpen] = React.useState(false);
+			const [customFrom, setCustomFrom] = React.useState('');
+			const [customTo, setCustomTo] = React.useState('');
+			const applyCustomRange = () => {
+				if (!customFrom || !customTo) return;
+				const fromTs = Date.parse(customFrom + 'T00:00:00');
+				const toTs = Date.parse(customTo + 'T23:59:59');
+				if (Number.isNaN(fromTs) || Number.isNaN(toTs) || fromTs > toTs) return;
+				setRange({ from: new Date(fromTs).toISOString(), to: new Date(toTs).toISOString() });
+				setPage(1);
+			};
 			const trendModels = modelBreakdown.map((r: BreakdownRow) => r.key);
 			const modelNames: Record<string, string> = {};
 			for (const m of pricing?.models ?? []) {
@@ -1618,6 +1677,15 @@ import type {
 								}
 							},
 							t('rangeAll')
+						),
+						React.createElement(
+							'button',
+							{
+								type: 'button',
+								className: 'dup-segment-btn' + (typeof range === 'object' ? ' is-active' : ''),
+								onClick: () => setCustomOpen((open: boolean) => !open)
+							},
+							t('rangeCustom')
 						)
 					),
 					React.createElement(
@@ -1633,6 +1701,31 @@ import type {
 						refreshing ? t('btnRefreshing') : t('btnRefresh')
 					)
 				),
+				customOpen &&
+					React.createElement(
+						'div',
+						{ className: 'dup-custom-row' },
+						React.createElement('input', {
+							type: 'date',
+							className: 'dup-input',
+							value: customFrom,
+							'aria-label': t('customFrom'),
+							onChange: (e: any) => setCustomFrom(e.target.value)
+						}),
+						React.createElement('span', { style: { color: 'var(--dup-ink-3, #86909C)' } }, '→'),
+						React.createElement('input', {
+							type: 'date',
+							className: 'dup-input',
+							value: customTo,
+							'aria-label': t('customTo'),
+							onChange: (e: any) => setCustomTo(e.target.value)
+						}),
+						React.createElement(
+							'button',
+							{ type: 'button', className: 'dup-btn', onClick: applyCustomRange },
+							t('customApply')
+						)
+					),
 
 				// Loading indicator
 				loading &&
@@ -1804,10 +1897,13 @@ import type {
 					modelNames
 				}),
 
-				// 5. Model × Provider Breakdown Table
+				// 5. Model + Provider tables pair side-by-side on wide screens.
 				React.createElement(
 					'div',
-					{ className: 'dup-card' },
+					{ className: 'dup-cols' },
+					React.createElement(
+						'div',
+						{ className: 'dup-card' },
 					React.createElement(
 						'div',
 						{ className: 'dup-card-header' },
@@ -1879,6 +1975,7 @@ import type {
 									)
 								)
 						  )
+					)
 				),
 
 				// 6. Session Top List (with subagent rollup)
