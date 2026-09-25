@@ -147,18 +147,26 @@ function makeEnv(t) {
 
 /**
  * Mount the plugin against a ctx whose tools.register enforces the real host
- * contract. Returns the registered tool plus the route paths that were mounted.
+ * contract, and whose inject() mirrors cordis. inject() is how apply() obtains
+ * webServer: measured against the real cordis, `ctx.get('webServer')` returns
+ * undefined forever while `ctx.inject(['webServer'], cb)` fires as soon as the
+ * service is available. Returns the tool plus the mounted route paths.
  */
 function captureTool(env, toolsOverride) {
 	const tools = [];
 	const routes = [];
+	const webServer = { register: (route) => { routes.push(route.path); return () => {}; } };
 	const ctx = {
 		tools: toolsOverride ?? { register: (definition) => registerTool(tools, definition) },
-		// The host Context carries cordis `effect` plus the synchronous service
-		// lookup `get`; the fake mirrors both so apply() mounts its web routes
-		// the way the shipped web app does (`ctx.get('webServer')`).
 		effect: (callback) => { const disposer = callback(); return typeof disposer === 'function' ? disposer : () => {}; },
-		get: (name) => (name === 'webServer' ? { register: (route) => { routes.push(route.path); return () => {}; } } : undefined)
+		inject: (names, callback) => {
+			const injected = { effect: ctx.effect };
+			for (const name of names) {
+				if (name === 'webServer') injected.webServer = webServer;
+			}
+			callback(injected);
+			return () => {};
+		}
 	};
 	apply(ctx, { refreshMs: 60000, sessionsDir: env.sessionsDir, dataDir: env.dataDir, priceSnapshotPath: env.snapshotPath });
 	return { tool: tools[0], routes };
@@ -245,7 +253,14 @@ test('ordering: a throwing tools.register still leaves every data route mounted'
 	const ctx = {
 		tools: { register: () => { throw new TypeError('tool "usage_query" must declare output { schema, render, presentationMeta? }'); } },
 		effect: (callback) => { const disposer = callback(); return typeof disposer === 'function' ? disposer : () => {}; },
-		get: (name) => (name === 'webServer' ? { register: (route) => { routes.push(route.path); return () => {}; } } : undefined)
+		inject: (names, callback) => {
+			const injected = { effect: ctx.effect };
+			for (const name of names) {
+				if (name === 'webServer') injected.webServer = { register: (route) => { routes.push(route.path); return () => {}; } };
+			}
+			callback(injected);
+			return () => {};
+		}
 	};
 	assert.throws(() => apply(ctx, { refreshMs: 60000, sessionsDir: env.sessionsDir, dataDir: env.dataDir, priceSnapshotPath: env.snapshotPath }), /must declare output/);
 	// The browser half must already be live: a tool-contract break is an agent
@@ -259,4 +274,27 @@ test('ordering: a throwing tools.register still leaves every data route mounted'
 		'/usage-panel/api/refresh',
 		'/usage-panel/api/ledger'
 	]);
+});
+
+test('webServer is obtained via ctx.inject, never ctx.get (live regression)', async () => {
+	const env = makeEnv(test);
+	const routes = [];
+	// Measured against the REAL cordis on this host: ctx.get('webServer') returns
+	// undefined forever, while ctx.inject(['webServer'], cb) fires. Shipping the
+	// `get` form made the plugin activate "successfully" while mounting nothing,
+	// so every browser request fell through to the SPA fallback (405 on POST).
+	const ctx = {
+		tools: { register: (definition) => registerTool([], definition) },
+		effect: (callback) => { const disposer = callback(); return typeof disposer === 'function' ? disposer : () => {}; },
+		// `get` deliberately throws: if the plugin ever reaches for it again,
+		// this test fails loudly instead of silently mounting zero routes.
+		get: () => { throw new Error('apply() must not use ctx.get() to reach webServer'); },
+		inject: (names, callback) => {
+			assert.ok(names.includes('webServer'), 'apply() must inject the webServer dependency');
+			callback({ effect: ctx.effect, webServer: { register: (route) => { routes.push(route.path); return () => {}; } } });
+			return () => {};
+		}
+	};
+	apply(ctx, { refreshMs: 60000, sessionsDir: env.sessionsDir, dataDir: env.dataDir, priceSnapshotPath: env.snapshotPath });
+	assert.equal(routes.length, 7, 'all seven endpoints must mount through the injected webServer');
 });

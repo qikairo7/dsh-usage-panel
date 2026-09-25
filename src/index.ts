@@ -101,30 +101,38 @@ export function apply(ctx: Context, config: Record<string, any> = {}) {
 
 	// Mount the browser half's endpoints on the web server's own route table.
 	//
-	// Service access uses the synchronous `ctx.get('webServer')` form — the
-	// same call the shipped web app itself uses (dsh-web-app/lib/index.js:96
-	// `ctx.get("webServer")?.port`). The earlier `ctx.inject(['webServer'], …)`
-	// form never fired on this host: the loader entry sits after the web stack
-	// has already activated, so the callback never ran and the routes were
-	// never mounted (verified live: GET on our endpoint answered 404 while the
-	// SPA fallback answered 405 to every POST, including nonexistent paths).
+	// Service access MUST go through the cordis dependency injector. Measured
+	// against the real cordis on this host (probe, 2026-09-25):
 	//
-	// Soft dependency by design: a profile without a web server (headless) has
-	// no route table; the plugin still serves its tool half there.
-	const webServer = (ctx as { get?: (name: string) => any }).get?.('webServer');
-	if (webServer === null || webServer === undefined) {
-		ctx.logger?.info?.('dsh-usage-panel: no web server in this profile — browser endpoints not mounted');
-	} else {
-		if (typeof webServer.register !== 'function') {
+	//   ctx.get('webServer')            → undefined, and stays undefined
+	//                                     forever — even after the web server
+	//                                     fiber activates
+	//   ctx.inject(['webServer'], cb)   → cb FIRES once the service is
+	//                                     available; cb receives a ctx whose
+	//                                     `webServer` is the live service
+	//
+	// The synchronous `ctx.get` form was a misdiagnosis: the routes were
+	// actually missing because an earlier tool-registration throw aborted
+	// apply() before it reached this block, and `get` silently returned
+	// undefined, so the plugin activated "successfully" while mounting
+	// nothing. Every browser request then fell through to the SPA fallback
+	// (405 on POST). This is the shipped-plugin pattern (y2zyyr/
+	// dsh-token-usage-sidebar declares `inject = ['webServer', …]`).
+	//
+	// Soft dependency by design: a profile without a web server (headless)
+	// simply never fires the callback; the tool half still works there.
+	ctx.inject(['webServer'], (webCtx: any) => {
+		const webServer = webCtx.webServer;
+		if (typeof webServer?.register !== 'function') {
 			throw new Error('usage-panel: webServer service exposes no register() — the browser half would 404 on every request');
 		}
 		for (const endpoint of RPC_ENDPOINTS) {
-			ctx.effect(
+			webCtx.effect(
 				() => webServer.register(createRpcRoute(endpoint, (ep: string, payload: unknown) => dispatchRpc(service, ep, payload))),
 				`dsh-usage-panel: ${endpoint} route`
 			);
 		}
-	}
+	});
 
 	ctx.tools.register({
 		name: 'usage_query',
@@ -224,7 +232,12 @@ interface Context {
 	};
 	/** Cordis effect: setup runs now, the returned disposer runs on fiber teardown. */
 	effect(callback: () => void | (() => void), label?: string): unknown;
-	/** Synchronous service lookup (cordis): undefined when the service is absent. */
-	get?(name: string): any;
+	/**
+	 * Cordis dependency injection: `callback` runs once every named service is
+	 * available, receiving a context that carries them. This is the ONLY way to
+	 * obtain `webServer` here — `ctx.get('webServer')` returns undefined forever
+	 * on this host (measured against the real cordis, 2026-09-25).
+	 */
+	inject(names: string[], callback: (injected: any) => void): unknown;
 	logger?: { info?(message: string): void; warn?(message: string): void; error?(...args: unknown[]): void };
 }

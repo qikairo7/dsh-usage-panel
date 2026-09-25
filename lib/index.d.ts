@@ -20,8 +20,13 @@ interface Context {
     };
     /** Cordis effect: setup runs now, the returned disposer runs on fiber teardown. */
     effect(callback: () => void | (() => void), label?: string): unknown;
-    /** Synchronous service lookup (cordis): undefined when the service is absent. */
-    get?(name: string): any;
+    /**
+     * Cordis dependency injection: `callback` runs once every named service is
+     * available, receiving a context that carries them. This is the ONLY way to
+     * obtain `webServer` here — `ctx.get('webServer')` returns undefined forever
+     * on this host (measured against the real cordis, 2026-09-25).
+     */
+    inject(names: string[], callback: (injected: any) => void): unknown;
     logger?: {
         info?(message: string): void;
         warn?(message: string): void;
