@@ -1133,7 +1133,7 @@ import type {
 }
 .dup-root .dup-heat-period {
   flex: 0 0 auto;
-  color: #9ca3af;
+  color: var(--dsw-text-tertiary, #9ca3af);
   font-size: 11px;
 }
 .dup-root .dup-heat-layout {
@@ -1148,7 +1148,7 @@ import type {
   grid-template-rows: repeat(7, var(--dup-heat-cell));
   row-gap: 4px;
   padding-top: 20px;
-  color: #9ca3af;
+  color: var(--dsw-text-tertiary, #9ca3af);
   font-size: 10px;
   text-align: right;
 }
@@ -1166,7 +1166,7 @@ import type {
   column-gap: 4px;
   height: 14px;
   margin-bottom: 6px;
-  color: #9ca3af;
+  color: var(--dsw-text-tertiary, #9ca3af);
   font-size: 11px;
   line-height: 14px;
 }
@@ -1230,19 +1230,51 @@ import type {
   gap: 6px;
   margin-top: 12px;
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--dsw-text-tertiary, #9ca3af);
 }
 .dup-root .dup-heat-swatch {
   width: 12px;
   height: 12px;
   border-radius: 3px;
-  background: #eef0f3;
+  background: var(--dsw-usage-day-empty, #eef0f3);
   display: inline-block;
 }
 .dup-root .dup-heat-swatch[data-level='1'] { background: #d6e4ff; }
 .dup-root .dup-heat-swatch[data-level='2'] { background: #9ec5fe; }
 .dup-root .dup-heat-swatch[data-level='3'] { background: #4d8df6; }
 .dup-root .dup-heat-swatch[data-level='4'] { background: #1d5fd0; }
+/* Dark theme: re-point the dsw tokens this panel leans on. Hook candidates
+   cover the common shell conventions; the media query is the OS fallback. */
+html.dark .dup-root,
+body.dark .dup-root,
+.dark .dup-root,
+[data-theme='dark'] .dup-root,
+[data-theme='dark'] .dup-root,
+[data-appearance='dark'] .dup-root {
+  --dsw-surface-primary: #1e222a;
+  --dsw-surface-secondary: #242933;
+  --dsw-surface-hover: #2a3038;
+  --dsw-border-color: #363c48;
+  --dsw-text-title: #e8eaed;
+  --dsw-text-primary: #d5d9e0;
+  --dsw-text-secondary: #9aa1ab;
+  --dsw-text-tertiary: #7d848f;
+  --dsw-usage-day-empty: #2b313c;
+}
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme='light']):not(.light) .dup-root,
+  html:not([data-theme='light']):not(.light) body .dup-root {
+    --dsw-surface-primary: #1e222a;
+    --dsw-surface-secondary: #242933;
+    --dsw-surface-hover: #2a3038;
+    --dsw-border-color: #363c48;
+    --dsw-text-title: #e8eaed;
+    --dsw-text-primary: #d5d9e0;
+    --dsw-text-secondary: #9aa1ab;
+    --dsw-text-tertiary: #7d848f;
+    --dsw-usage-day-empty: #2b313c;
+  }
+}
 `;
 
 		// ─── SVG Icons ─────────────────────────────────────────────────────────────
