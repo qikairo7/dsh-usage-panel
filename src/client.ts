@@ -1425,9 +1425,12 @@ import type {
 										'tbody',
 										null,
 										modelBreakdown.map((row: BreakdownRow) => {
-											// Check price mode against pricing models if present
+											// Prefer the catalog's curated entry for this model id. The
+											// breakdown key is the raw id; displayName is what the user
+											// should read.
 											const pricingEntry = pricing?.models?.find((m: PricingModel) => m.model === row.key);
 											const mode = pricingEntry ? pricingEntry.priceMode : row.cost === 0 && row.tokens > 0 ? 'unpriced' : 'official';
+											const label = pricingEntry?.displayName || row.key;
 
 											return React.createElement(
 												'tr',
@@ -1435,7 +1438,13 @@ import type {
 												React.createElement(
 													'td',
 													{ style: { fontWeight: 600 } },
-													React.createElement('div', null, row.key),
+													React.createElement('div', null, label),
+													label !== row.key &&
+														React.createElement(
+															'div',
+															{ style: { fontSize: '10px', color: 'var(--dsw-text-tertiary, #86909C)', fontFamily: 'monospace' } },
+															row.key
+														),
 													React.createElement(
 														'div',
 														{ style: { marginTop: 3 } },
@@ -1586,15 +1595,17 @@ import type {
 									React.createElement(
 										'tbody',
 										null,
-										details.rows.map((r: DetailRow, idx: number) =>
-											React.createElement(
+										details.rows.map((r: DetailRow, idx: number) => {
+											const detailLabel =
+												pricing?.models?.find((m: PricingModel) => m.model === r.model)?.displayName || r.model || '—';
+											return React.createElement(
 												'tr',
 												{ key: r.ts + '-' + idx },
 												React.createElement('td', { style: { whiteSpace: 'nowrap' } }, formatTimestamp(r.ts)),
 												React.createElement(
 													'td',
 													null,
-													React.createElement('div', { style: { fontWeight: 600 } }, r.model || '—'),
+													React.createElement('div', { style: { fontWeight: 600 } }, detailLabel),
 													React.createElement(
 														'div',
 														{ style: { fontSize: '11px', color: 'var(--dsw-text-tertiary, #86909C)' } },
@@ -1643,8 +1654,8 @@ import type {
 																r.priceMode === 'shadow' && React.createElement(PriceModeBadge, { mode: 'shadow', t })
 														  )
 												)
-											)
-										)
+												);
+										})
 									)
 								),
 								// Pagination footer

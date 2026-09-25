@@ -174,16 +174,32 @@ test('price engine four modes', async () => {
 	const unpriced = engine.priceCall(U(1_000_000, 1_000_000, 0), null, 'who-knows');
 	assert.equal(unpriced.priceMode, 'unpriced');
 	assert.equal(unpriced.cost, null);
-	// community: cache file wins over snapshot
+	// community: fills in models the curated snapshot does NOT cover. The
+	// snapshot is consulted first on purpose — it holds vendor-verified prices,
+	// and letting a broad aggregator row win would mislabel an official price
+	// as 社区源 (regression: claude-sonnet-4-6 / gemini-3.8-flash showed 社区源).
 	writeFileSync(path.join(env.dataDir, 'community.json'), JSON.stringify({
 		schemaVersion: 1, source: 'community-test', fetchedAt: 1,
 		subscriptionShadowMap: {}, channelUnitPricesCny: {},
-		models: [{ model: 'model-a', tiers: { input: 5, output: 5, cacheRead: 0, cacheWrite: 0 }, priceMode: 'community' }]
+		models: [
+			{ model: 'model-a', tiers: { input: 5, output: 5, cacheRead: 0, cacheWrite: 0 }, priceMode: 'community' },
+			{ model: 'community-only', tiers: { input: 7, output: 7, cacheRead: 0, cacheWrite: 0 }, priceMode: 'community' }
+		]
 	}), 'utf8');
 	const engine2 = await PriceEngine.load(env.snapshotPath, path.join(env.dataDir, 'community.json'));
-	const community = engine2.priceCall(U(1_000_000, 0, 0), 'prov-a', 'model-a');
-	assert.equal(community.priceMode, 'community');
-	assert.ok(Math.abs(community.cost - 5) < 1e-9);
+	// curated snapshot wins for a model it covers
+	const curatedWins = engine2.priceCall(U(1_000_000, 0, 0), 'prov-a', 'model-a');
+	assert.equal(curatedWins.priceMode, 'official', 'curated snapshot must win over the community cache');
+	assert.ok(Math.abs(curatedWins.cost - 1) < 1e-9);
+	// community still supplies models the snapshot lacks
+	const communityFills = engine2.priceCall(U(1_000_000, 0, 0), 'prov-a', 'community-only');
+	assert.equal(communityFills.priceMode, 'community');
+	assert.ok(Math.abs(communityFills.cost - 7) < 1e-9);
+	// catalog keeps curated-only models AND labels curated ones correctly
+	const cat = engine2.catalog();
+	const curated = cat.models.find((m) => m.model === 'model-a');
+	assert.equal(curated.priceMode, 'official', 'catalog must report the curated mode, not community');
+	assert.ok(cat.models.some((m) => m.model === 'community-only'), 'catalog must still include community-only models');
 });
 
 test('price engine: WS4 snapshot shapes (all-null tiers, per-dim null, ISO fetchedAt, array shadowMap)', async () => {
