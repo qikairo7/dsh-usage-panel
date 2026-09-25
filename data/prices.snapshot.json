@@ -133,6 +133,21 @@
       "displayName": "DeepSeek-V4-Pro"
     },
     {
+      "model": "space-bunny-free",
+      "provider": "deepseek",
+      "tiers": {
+        "input": 1.3387,
+        "output": 4.0161,
+        "cacheRead": 0.0446,
+        "cacheWrite": null
+      },
+      "per": "MTok",
+      "priceMode": "official-alias",
+      "sourceUrl": "https://api-docs.deepseek.com/zh-cn/quick_start/pricing",
+      "notes": "渠道内部名 space-bunny-free = DeepSeek V4-Pro 0831（用户确认，2026-09-25）。按 deepseek-v4-pro 官方条目同价计费；该渠道虽名义 free，费用按真实模型价值口径入账。",
+      "displayName": "DeepSeek-V4-Pro（0831）"
+    },
+    {
       "model": "gemini-3.8-flash",
       "provider": "google",
       "tiers": {
