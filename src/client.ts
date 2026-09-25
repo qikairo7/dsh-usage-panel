@@ -56,8 +56,6 @@ import type {
 		const React = require('react');
 
 		const NS = 'usage-panel';
-		const SIDEBAR_TAB_ID = 'dsh-usage-panel';
-		const SIDEBAR_TAB_KIND = 'dsh-usage-panel';
 		// USD → CNY 换算系数。必须与价格快照 data/prices.snapshot.json 的
 		// `currency` 字段一致：该快照记录「1 USD = 6.722655 CNY，来源
 		// open.er-api.com，2026-09-24 快照，证据 reports/probes/fx-usd.json」。
@@ -163,8 +161,14 @@ import type {
 				mainAgent: '主会话',
 				subAgent: '子 Agent',
 				timeseriesTitle: '每日趋势分布',
+				timeseriesTitleHour: '每小时趋势分布',
 				timeseriesTitleWeek: '每周趋势分布',
 				timeseriesTitleMonth: '每月趋势分布',
+				kpiRealInput: '真实消耗输入',
+				kpiRealInputSub: '未缓存输入（缓存命中见命中率卡）',
+				legendCostRight: '费用（右轴）',
+				providerTitle: 'Provider / 渠道分布明细',
+				detailExpandHint: '点击行查看单次调用构成',
 				trendModelAll: '全部模型',
 				trendModelLabel: '模型',
 				legendUncachedInput: '未缓存输入',
@@ -253,8 +257,14 @@ import type {
 				mainAgent: 'Main Session',
 				subAgent: 'Subagent',
 				timeseriesTitle: 'Daily Trend Distribution',
+				timeseriesTitleHour: 'Hourly Trend Distribution',
 				timeseriesTitleWeek: 'Weekly Trend Distribution',
 				timeseriesTitleMonth: 'Monthly Trend Distribution',
+				kpiRealInput: 'Fresh Input (uncached)',
+				kpiRealInputSub: 'excl. cache hits — see hit-rate card',
+				legendCostRight: 'Cost (right axis)',
+				providerTitle: 'Provider Breakdown',
+				detailExpandHint: 'Click a row for per-call composition',
 				trendModelAll: 'All models',
 				trendModelLabel: 'Model',
 				legendUncachedInput: 'Uncached input',
@@ -604,6 +614,25 @@ import type {
   border-radius: 2px;
   flex: none;
 }
+/* Expanded per-call composition row in the request log. */
+.dup-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 6px 14px;
+}
+.dup-detail-item {
+  font-size: 11px;
+  color: var(--dsw-text-tertiary, #86909C);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.dup-detail-item b {
+  display: block;
+  font-size: 12px;
+  color: var(--dsw-text-primary, #1D2129);
+  font-variant-numeric: tabular-nums;
+  margin-top: 1px;
+}
 /* The SVG keeps its intrinsic aspect ratio (no preserveAspectRatio="none"),
    so circles stay round and stroke widths stay even at any pane width. */
 .dup-chart-svg {
@@ -847,19 +876,6 @@ import type {
 
 		// ─── SVG Icons ─────────────────────────────────────────────────────────────
 
-		function IconMeter() {
-			return React.createElement(
-				'svg',
-				{ width: 15, height: 15, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' },
-				React.createElement('path', { d: 'M12 2v4' }),
-				React.createElement('path', { d: 'm4.93 4.93 2.83 2.83' }),
-				React.createElement('path', { d: 'M2 12h4' }),
-				React.createElement('path', { d: 'm4.93 19.07 2.83-2.83' }),
-				React.createElement('path', { d: 'M12 18a6 6 0 1 0 0-12 6 6 0 0 0 0 12Z' }),
-				React.createElement('path', { d: 'm14 10-2 2' })
-			);
-		}
-
 		function IconBolt() {
 			return React.createElement(
 				'svg',
@@ -973,10 +989,10 @@ import type {
 			);
 			const maxVal = Math.max(...totals, 1);
 
-			const width = 340;
-			const height = composed ? 152 : 132;
-			const padLeft = 48;
-			const padRight = 10;
+			const width = 700;
+			const height = composed ? 240 : 210;
+			const padLeft = 52;
+			const padRight = 56;
 			const padTop = 10;
 			const padBottom = 26;
 			const chartW = width - padLeft - padRight;
@@ -1021,9 +1037,22 @@ import type {
 				const idx = labelSlots === 1 ? 0 : Math.round((k / (labelSlots - 1)) * (rows.length - 1));
 				if (!xLabelIdx.includes(idx)) xLabelIdx.push(idx);
 			}
-			const shortDate = (date: string): string => (date.length >= 10 ? date.slice(5) : date);
+			// Hour buckets key as "YYYY-MM-DD HH:00" — show only the clock time.
+			const shortDate = (date: string): string =>
+				date.includes(' ') ? date.slice(11, 16) : date.length >= 10 ? date.slice(5) : date;
 
 			const hoveredPoint = hoveredIdx !== null && points[hoveredIdx] ? points[hoveredIdx] : null;
+
+			// Dual axis (cc-switch style): the token composition uses the left
+			// axis; cost rides a separate right-axis scale as a thin line, so
+			// both are visible at once instead of behind a metric toggle.
+			const costMax = Math.max(...rows.map((r: TimeseriesRow) => r.cost), 1e-9);
+			const costPathD =
+				metric === 'tokens' && rows.length > 1
+					? rows
+							.map((r: TimeseriesRow, i: number) => `${i === 0 ? 'M' : 'L'} ${xs[i]} ${baseY - (r.cost / costMax) * chartH}`)
+							.join(' ')
+					: '';
 
 			return React.createElement(
 				'div',
@@ -1177,6 +1206,23 @@ import type {
 									areaD && React.createElement('path', { d: areaD, fill: 'url(#dup-area-grad)' }),
 									pathD && React.createElement('path', { d: pathD, fill: 'none', stroke: '#007AFF', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' })
 								),
+						// Cost overlay on the right axis + its tick labels.
+						costPathD && React.createElement('path', { d: costPathD, fill: 'none', stroke: '#F43F5E', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' }),
+						metric === 'tokens' &&
+							[0, 0.5, 1].map((f, idx) =>
+								React.createElement(
+									'text',
+									{
+										key: `cr${idx}`,
+										x: width - padRight + 8,
+										y: baseY - f * chartH + 3,
+										textAnchor: 'start',
+										fontSize: 8,
+										fill: '#F43F5E'
+									},
+									formatCostCny(costMax * f)
+								)
+							),
 						// X axis date labels
 						xLabelIdx.map((idx) =>
 							React.createElement(
@@ -1230,6 +1276,12 @@ import type {
 							{ className: 'dup-legend-item' },
 							React.createElement('i', { style: { background: '#30D158', opacity: 0.5 } }),
 							t('cacheHitLine')
+						),
+						React.createElement(
+							'span',
+							{ className: 'dup-legend-item' },
+							React.createElement('i', { style: { background: '#F43F5E', height: '2px', borderRadius: 0 } }),
+							t('legendCostRight')
 						)
 					)
 			);
@@ -1244,6 +1296,7 @@ import type {
 			const [summary, setSummary] = React.useState(null as SummaryResult | null);
 			const [timeseries, setTimeseries] = React.useState([] as TimeseriesRow[]);
 			const [modelBreakdown, setModelBreakdown] = React.useState([] as BreakdownRow[]);
+			const [providerBreakdown, setProviderBreakdown] = React.useState([] as BreakdownRow[]);
 			const [sessionBreakdown, setSessionBreakdown] = React.useState([] as BreakdownRow[]);
 			const [details, setDetails] = React.useState(null as DetailResult | null);
 			const [pricing, setPricing] = React.useState(null as PricingResult | null);
@@ -1262,6 +1315,8 @@ import type {
 
 			// Trend chart: which single model to plot ('' = every model).
 			const [trendModel, setTrendModel] = React.useState('');
+			// Request log: row key of the currently expanded per-call breakdown.
+			const [expandedRow, setExpandedRow] = React.useState(null as string | null);
 			const trendModels = modelBreakdown.map((r: BreakdownRow) => r.key);
 			const modelNames: Record<string, string> = {};
 			for (const m of pricing?.models ?? []) {
@@ -1269,12 +1324,15 @@ import type {
 			}
 			// The server picks the bucket from the range; mirror it in the title
 			// so "每月" does not sit above a chart that is actually by day.
+			// today→hour, week→day, month→week, all→month (server auto mapping).
 			const trendTitle =
-				range === 'month'
-					? t('timeseriesTitleWeek')
-					: range === 'all'
-						? t('timeseriesTitleMonth')
-						: t('timeseriesTitle');
+				range === 'today'
+					? t('timeseriesTitleHour')
+					: range === 'month'
+						? t('timeseriesTitleWeek')
+						: range === 'all'
+							? t('timeseriesTitleMonth')
+							: t('timeseriesTitle');
 
 			// Fetch all data for current range
 			const loadAllData = React.useCallback(
@@ -1291,15 +1349,17 @@ import type {
 						callRpc<SummaryResult>('summary', { range }),
 						callRpc<TimeseriesRow[]>('timeseries', { range, bucket: 'auto', model: trendModel || undefined }),
 						callRpc<BreakdownRow[]>('breakdown', { range, by: 'model' }),
+						callRpc<BreakdownRow[]>('breakdown', { range, by: 'provider' }),
 						callRpc<BreakdownRow[]>('breakdown', { range, by: 'session' }),
 						callRpc<DetailResult>('detail', { range, filters, page, pageSize: 20 }),
 						callRpc<PricingResult>('pricing', {}),
 						callRpc<LedgerResult>('ledger', {})
 					])
-						.then(([s, ts, mb, sb, dt, pr, lg]) => {
+						.then(([s, ts, mb, pb, sb, dt, pr, lg]) => {
 							setSummary(s);
 							setTimeseries(ts);
 							setModelBreakdown(mb);
+							setProviderBreakdown(pb);
 							setSessionBreakdown(sb);
 							setDetails(dt);
 							setPricing(pr);
@@ -1483,6 +1543,16 @@ import type {
 								{ className: 'dup-kpi-sub' },
 								`In: ${formatTokens(summary.tokens.input)} · Out: ${formatTokens(summary.tokens.output)}`
 							)
+						),
+						// Fresh (uncached) input — cc-switch's "real consumption" framing:
+						// the part that was NOT served from cache, i.e. what the
+						// hit-rate card does NOT cover.
+						React.createElement(
+							'div',
+							{ className: 'dup-card dup-kpi-card' },
+							React.createElement('span', { className: 'dup-kpi-label' }, t('kpiRealInput')),
+							React.createElement('span', { className: 'dup-kpi-val' }, formatTokens(summary.tokens.input)),
+							React.createElement('span', { className: 'dup-kpi-sub' }, t('kpiRealInputSub'))
 						),
 						// Total Cost
 						React.createElement(
@@ -1713,6 +1783,55 @@ import type {
 						  )
 				),
 
+				// 6b. Provider Breakdown (cc-switch's ProviderStatsTable)
+				React.createElement(
+					'div',
+					{ className: 'dup-card' },
+					React.createElement(
+						'div',
+						{ className: 'dup-card-header' },
+						React.createElement('span', { className: 'dup-card-title' }, t('providerTitle'))
+					),
+					providerBreakdown.length === 0
+						? React.createElement('div', { className: 'dup-empty-desc', style: { padding: '16px 0', textAlign: 'center' } }, t('emptyList'))
+						: React.createElement(
+								'div',
+								{ className: 'dup-table-wrap' },
+								React.createElement(
+									'table',
+									{ className: 'dup-table' },
+									React.createElement(
+										'thead',
+										null,
+										React.createElement(
+											'tr',
+											null,
+											React.createElement('th', null, t('colProvider')),
+											React.createElement('th', null, t('colTokens')),
+											React.createElement('th', null, t('colCost')),
+											React.createElement('th', null, t('colCalls')),
+											React.createElement('th', null, t('colCacheHit'))
+										)
+									),
+									React.createElement(
+										'tbody',
+										null,
+										providerBreakdown.map((row: BreakdownRow) =>
+											React.createElement(
+												'tr',
+												{ key: row.key },
+												React.createElement('td', { style: { fontWeight: 600 } }, row.key),
+												React.createElement('td', null, formatTokens(row.tokens)),
+												React.createElement('td', null, formatCostCny(row.cost)),
+												React.createElement('td', null, formatNumber(row.calls)),
+												React.createElement('td', null, formatPercent(row.cacheHitRate))
+											)
+										)
+									)
+								)
+						  )
+				),
+
 				// 7. Call-level Audit Detail Table (Paginated + Filtered)
 				React.createElement(
 					'div',
@@ -1785,9 +1904,24 @@ import type {
 										details.rows.map((r: DetailRow, idx: number) => {
 											const detailLabel =
 												pricing?.models?.find((m: PricingModel) => m.model === r.model)?.displayName || r.model || '—';
-											return React.createElement(
-												'tr',
-												{ key: r.ts + '-' + idx },
+											const rowKey = r.ts + '-' + idx;
+											const expanded = expandedRow === rowKey;
+											const item = (label: string, value: any) =>
+												React.createElement(
+													'div',
+													{ className: 'dup-detail-item' },
+													React.createElement('span', null, label),
+													React.createElement('b', null, value)
+												);
+											return [
+												React.createElement(
+													'tr',
+													{
+														key: rowKey,
+														style: { cursor: 'pointer' },
+														title: t('detailExpandHint'),
+														onClick: () => setExpandedRow((cur: string | null) => (cur === rowKey ? null : rowKey))
+													},
 												React.createElement('td', { style: { whiteSpace: 'nowrap' } }, formatTimestamp(r.ts)),
 												React.createElement(
 													'td',
@@ -1841,7 +1975,29 @@ import type {
 																r.priceMode === 'shadow' && React.createElement(PriceModeBadge, { mode: 'shadow', t })
 														  )
 												)
-												);
+											),
+												expanded
+													? React.createElement(
+															'tr',
+															{ key: rowKey + '-x' },
+															React.createElement(
+																'td',
+																{ colSpan: 5, style: { background: 'var(--dsw-bg-secondary, #F2F3F5)', padding: '8px 10px' } },
+																React.createElement(
+																	'div',
+																	{ className: 'dup-detail-grid' },
+																	item(t('legendUncachedInput'), formatTokens(r.usage.input)),
+																	item(t('legendCacheRead'), formatTokens(r.usage.cacheRead)),
+																	item(t('legendCacheWrite'), formatTokens(r.usage.cacheWrite)),
+																	item(t('legendOutput'), formatTokens(r.usage.output)),
+																	item(t('kpiTotalTokens'), formatTokens(r.usage.total)),
+																	item(t('colProvider'), r.provider || '—'),
+																	item(t('colCost'), r.cost === null ? t('badgeUnpriced') : formatCostCny(r.cost))
+																)
+															)
+													  )
+													: null
+											];
 										})
 									)
 								),
@@ -1968,8 +2124,8 @@ import type {
 
 		// ─── Surface B: Composer Bottom Status Bar ──────────────────────────────────
 
-		function ComposerStatusBar(props: { t: (key: string, vars?: Record<string, unknown>) => string; ctx: any }) {
-			const { t, ctx } = props;
+		function ComposerStatusBar(props: { t: (key: string, vars?: Record<string, unknown>) => string }) {
+			const { t } = props;
 			const [summary, setSummary] = React.useState(null as SummaryResult | null);
 			const [error, setError] = React.useState(null as string | null);
 
@@ -1997,40 +2153,20 @@ import type {
 			const tokensStr = summary && error === null ? formatTokens(summary.tokens.total) : '—';
 			const costStr = summary && error === null ? formatCostCny(summary.cost.total) : '—';
 
-			const handleClick = () => {
-				try {
-					ctx.sidebarRight?.openTab(SIDEBAR_TAB_KIND);
-				} catch (err) {
-					console.error('Failed to open sidebar tab', err);
-				}
-			};
-
 			return React.createElement(
 				'div',
 				{
 					className: 'dup-composer-chip',
-					onClick: handleClick,
-					title: error !== null ? t('loadError', { message: error }) : t('clickToOpen')
+					title: error !== null ? t('loadError', { message: error }) : t('title')
 				},
 				React.createElement(IconBolt),
 				React.createElement('span', null, t('composerBarToday', { tokens: tokensStr, cost: costStr }))
 			);
 		}
 
-		// ─── Sidebar Title Component ───────────────────────────────────────────────
-
-		function UsageTabTitle(props: { t: (key: string) => string }) {
-			return React.createElement(
-				'span',
-				{ style: { display: 'inline-flex', alignItems: 'center', gap: 6 } },
-				React.createElement(IconMeter),
-				React.createElement('span', null, props.t ? props.t('tabTitle') : '用量看板')
-			);
-		}
-
 		// ─── Cordis Client Lifecycle Entry ─────────────────────────────────────────
 
-		const inject = ['slots', 'timer', 'locale', 'sidebarRightTabs', 'sidebarRight'];
+		const inject = ['slots', 'timer', 'locale'];
 
 		function apply(ctx: any) {
 			// 1. Inject Stylesheet
@@ -2051,67 +2187,21 @@ import type {
 
 			const t = ctx.locale.bind(NS);
 
-			// 3. Register Surface A: Right Sidebar Tab (Main Dashboard)
-			ctx.inject(['sidebarRightTabs'], (injected: any) => {
-				const disposers: Array<() => void> = [];
-				const own = (result: any) => {
-					if (typeof result === 'function') disposers.push(result);
-				};
-
-				try {
-					const tabs = injected.sidebarRightTabs;
-					if (tabs && typeof tabs.register === 'function') {
-						own(
-							tabs.register({
-								id: SIDEBAR_TAB_ID,
-								kind: SIDEBAR_TAB_KIND,
-								title: () => t('title'),
-								guide: [
-									{
-										order: 15,
-										title: () => t('title'),
-										description: () => t('guideDescription'),
-										icon: IconMeter
-									}
-								]
-							})
-						);
-
-						own(
-							injected.slots.inject('sidebar.right.pane.tab', () =>
-								injected.slots.register(
-									{
-										name: 'sidebar.right.pane.tab',
-										key: SIDEBAR_TAB_ID,
-										locale: NS
-									},
-									(props: any) => React.createElement(UsageSidebarTab, { ...props, t })
-								)
-							)
-						);
-
-						own(
-							injected.slots.inject('sidebar.right.pane.tab.title', () =>
-								injected.slots.register(
-									{
-										name: 'sidebar.right.pane.tab.title',
-										key: SIDEBAR_TAB_ID
-									},
-									() => React.createElement(UsageTabTitle, { t })
-								)
-							)
-						);
-					}
-				} catch (err) {
-					console.error('dsh-usage-panel: sidebar tab registration failed', err);
-					for (const dispose of disposers) dispose();
-					return;
-				}
-
-				return () => {
-					for (const dispose of disposers) dispose();
-				};
-			});
+			// 3. Register Surface A: Main-area View Tab (full-width dashboard).
+			// The host builds the main-area tab strip from conversation.view slot
+			// entries ({ id, label }) and renders the selected entry into the
+			// whole view area below the session header.
+			ctx.slots.inject('conversation.view', () =>
+				ctx.slots.register(
+					{
+						name: 'conversation.view',
+						id: 'usage-dashboard',
+						label: () => t('title'),
+						locale: NS
+					},
+					(props: any) => React.createElement(UsageSidebarTab, { ...props, t })
+				)
+			);
 
 			// 4. Register Surface B: Composer Bottom Status Bar
 			ctx.slots.inject('conversation.composer.dock', () =>

@@ -60,7 +60,7 @@ export interface SummaryResult {
 }
 
 /** How a timeseries point groups calls. 'auto' is resolved from the range. */
-export type TimeseriesBucket = 'auto' | 'day' | 'week' | 'month';
+export type TimeseriesBucket = 'auto' | 'hour' | 'day' | 'week' | 'month';
 
 export interface TimeseriesRow {
 	/** Bucket start: YYYY-MM-DD, or YYYY-MM for month buckets. */

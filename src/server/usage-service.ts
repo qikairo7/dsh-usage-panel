@@ -106,20 +106,30 @@ function weekBucket(ts: number): string {
 	return `${d.getFullYear()}-${m}-${day}`;
 }
 
+/** Local-time "YYYY-MM-DD HH:00" bucket key (hour granularity). */
+function hourBucket(ts: number): string {
+	const d = new Date(ts);
+	const m = String(d.getMonth() + 1).padStart(2, '0');
+	const day = String(d.getDate()).padStart(2, '0');
+	const h = String(d.getHours()).padStart(2, '0');
+	return `${d.getFullYear()}-${m}-${day} ${h}:00`;
+}
+
 /**
- * Pick a bucket width the range actually needs. A day-wide window bucketed
- * hourly-or-daily is one point either way, while "all history" bucketed daily
- * would be hundreds of unreadable points.
+ * Pick a bucket width the range actually needs. Mirrors the convention of
+ * mature usage dashboards: a ≤36h window reads best hourly, "all history"
+ * daily would be hundreds of unreadable points.
  */
-function resolveBucket(bucket: TimeseriesBucket, range: Range): 'day' | 'week' | 'month' {
+function resolveBucket(bucket: TimeseriesBucket, range: Range): 'hour' | 'day' | 'week' | 'month' {
 	if (bucket !== 'auto') return bucket;
 	if (isExplicitRange(range)) {
 		const spanDays = (Date.parse(range.to) - Date.parse(range.from)) / 86_400_000;
 		if (spanDays > 180) return 'month';
 		if (spanDays > 21) return 'week';
+		if (spanDays <= 1.5) return 'hour';
 		return 'day';
 	}
-	if (range === 'today') return 'day';
+	if (range === 'today') return 'hour';
 	if (range === 'week') return 'day';
 	if (range === 'month') return 'week';
 	return 'month';
@@ -231,7 +241,8 @@ export function createUsageService(options: UsageServiceOptions): UsageService {
 			const priceEngine = await ensureEngine();
 			const { from, to } = resolveRange(range);
 			const effective = resolveBucket(bucket, range);
-			const keyFor = effective === 'month' ? monthBucket : effective === 'week' ? weekBucket : dayBucket;
+			const keyFor =
+				effective === 'month' ? monthBucket : effective === 'week' ? weekBucket : effective === 'hour' ? hourBucket : dayBucket;
 			const records = model === undefined ? recordsInRange(from, to) : recordsInRange(from, to).filter((r) => r.model === model);
 			interface Acc {
 				tokens: number;

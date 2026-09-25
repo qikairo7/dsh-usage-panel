@@ -15,12 +15,12 @@ import { isExplicitRange } from '../lib/types.js';
 
 const RANGE_KEYWORDS = ['today', 'week', 'month', 'all'] as const;
 const BREAKDOWN_KEYS = new Set(['model', 'provider', 'session', 'origin']);
-const BUCKET_KEYWORDS: TimeseriesBucket[] = ['auto', 'day', 'week', 'month'];
+const BUCKET_KEYWORDS: TimeseriesBucket[] = ['auto', 'hour', 'day', 'week', 'month'];
 
 function parseBucket(value: unknown, at: string): TimeseriesBucket {
 	if (value === undefined || value === null) return 'auto';
 	if (typeof value !== 'string' || !BUCKET_KEYWORDS.includes(value as TimeseriesBucket)) {
-		throw new Error(`${at}: expected auto|day|week|month, got ${JSON.stringify(value)}`);
+		throw new Error(`${at}: expected auto|hour|day|week|month, got ${JSON.stringify(value)}`);
 	}
 	return value as TimeseriesBucket;
 }

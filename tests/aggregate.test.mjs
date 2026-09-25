@@ -145,6 +145,12 @@ test('timeseries: bucket width follows the range; a single model can be isolated
 	const byDay = await svc.timeseries('all', 'day');
 	assert.equal(byDay[0].date.length, 10, 'day bucket keys as YYYY-MM-DD');
 
+	// Hour buckets key as "YYYY-MM-DD HH:00"; both calls share one hour.
+	const byHour = await svc.timeseries('all', 'hour');
+	assert.equal(byHour.length, 1);
+	assert.equal(byHour[0].date.length, 16, 'hour bucket keys as YYYY-MM-DD HH:00');
+	assert.equal(byHour[0].calls, 2);
+
 	// Composition is preserved across bucket widths.
 	assert.equal(byMonth[0].input, 250);
 	assert.equal(byMonth[0].output, 75);
