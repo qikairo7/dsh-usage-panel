@@ -1243,14 +1243,9 @@ import type {
 .dup-root .dup-heat-swatch[data-level='2'] { background: #9ec5fe; }
 .dup-root .dup-heat-swatch[data-level='3'] { background: #4d8df6; }
 .dup-root .dup-heat-swatch[data-level='4'] { background: #1d5fd0; }
-/* Dark theme: re-point the dsw tokens this panel leans on. Hook candidates
-   cover the common shell conventions; the media query is the OS fallback. */
-html.dark .dup-root,
-body.dark .dup-root,
-.dark .dup-root,
-[data-theme='dark'] .dup-root,
-[data-theme='dark'] .dup-root,
-[data-appearance='dark'] .dup-root {
+/* Dark theme: driven by the runtime luminance probe (.dup-dark), which does
+   not depend on any shell-specific class or attribute convention. */
+.dup-root.dup-dark {
   --dsw-surface-primary: #1e222a;
   --dsw-surface-secondary: #242933;
   --dsw-surface-hover: #2a3038;
@@ -1504,6 +1499,34 @@ body.dark .dup-root,
 			// "GLM-5.3" vs "glm-5.3" read as the same name; only show the raw id
 			// as a sub-line when it genuinely differs from the display label.
 			const normId = (s: string) => s.toLowerCase().replace(/[-_.\s]+/g, '');
+			// Dark-mode detection: the shell's theme mechanism is not exposed to
+			// plugins, so measure the body's computed background luminance and
+			// re-probe whenever html/body class/style/theme attributes change.
+			const [dark, setDark] = React.useState(false);
+			React.useEffect(() => {
+				const probe = () => {
+					if (!document.body) return;
+					const bg = getComputedStyle(document.body).backgroundColor;
+					const m = /rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/.exec(bg);
+					if (m) {
+						const lum = 0.299 * Number(m[1]) + 0.587 * Number(m[2]) + 0.114 * Number(m[3]);
+						setDark(lum < 128);
+					} else {
+						setDark(window.matchMedia('(prefers-color-scheme: dark)').matches);
+					}
+				};
+				probe();
+				const mo = new MutationObserver(probe);
+				mo.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'style', 'data-theme'] });
+				if (document.body) mo.observe(document.body, { attributes: true, attributeFilter: ['class', 'style', 'data-theme'] });
+				const mq = window.matchMedia('(prefers-color-scheme: dark)');
+				mq.addEventListener('change', probe);
+				return () => {
+					mo.disconnect();
+					mq.removeEventListener('change', probe);
+				};
+			}, []);
+
 			// When this view mounts, the host's scroll container is still parked
 			// wherever the chat was (usually the bottom), so the board opens
 			// scrolled to its own bottom. Walk up to the first scrollable
@@ -1590,7 +1613,7 @@ body.dark .dup-root,
 
 			return React.createElement(
 				'div',
-				{ className: 'dup-root', ref: rootRef },
+				{ className: dark ? 'dup-root dup-dark' : 'dup-root', ref: rootRef },
 
 				// 1. Top Controls Bar: Time Filter
 				React.createElement(
