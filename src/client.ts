@@ -178,7 +178,7 @@ import type {
 				kpiTotalCost: '总估算费用',
 				kpiTotalCalls: '模型调用次数',
 				kpiSessions: '涉及会话',
-				kpiCacheHitRate: 'Cache 命中率',
+				kpiCacheHitRate: '缓存命中率',
 				kpiInputTokens: '输入 Tokens',
 				kpiOutputTokens: '输出 Tokens',
 				kpiCacheRead: '缓存读取 (Hit)',
@@ -213,7 +213,7 @@ import type {
 				colTokens: 'Tokens',
 				colCost: '费用',
 				colCalls: '调用数',
-				colCacheHit: 'Cache 命中率',
+				colCacheHit: '缓存命中率',
 				colPriceMode: '计价方式',
 				badgeShadow: '订阅线·影子成本',
 				badgeUnpriced: '未定价',
@@ -2333,7 +2333,8 @@ import type {
 						name: 'conversation.view',
 						id: 'usage-dashboard',
 						label: () => t('title'),
-						locale: NS
+						locale: NS,
+						priority: 10
 					},
 					(props: any) => React.createElement(UsageSidebarTab, { ...props, t })
 				)
