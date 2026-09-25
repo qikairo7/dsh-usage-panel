@@ -90,14 +90,6 @@ export async function dispatchRpc(service: UsageService, endpoint: string, paylo
 			const model = typeof p.model === 'string' && p.model.trim() ? p.model.trim() : undefined;
 			return service.timeseries(range, bucket, model) as unknown as Promise<Record<string, unknown>>;
 		}
-
-		case 'pricing-update': {
-			const p = (payload ?? {}) as { models?: unknown };
-			if (!Array.isArray(p.models)) {
-				throw new Error(`pricing-update.models: expected an array, got ${JSON.stringify(typeof p.models)}`);
-			}
-			return service.updatePricing(p.models) as unknown as Promise<Record<string, unknown>>;
-		}
 		case 'breakdown': {
 			const p = (payload ?? {}) as { range?: unknown; by?: unknown };
 			const range = parseRange(p.range, 'breakdown.range');
