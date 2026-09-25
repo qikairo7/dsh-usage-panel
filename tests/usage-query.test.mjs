@@ -48,7 +48,10 @@ function captureTool(env) {
 	let tool = null;
 	const ctx = {
 		tools: { register: (definition) => { tool = definition; } },
-		connection: { fetch: { register: () => undefined } }
+		connection: { fetch: { register: () => undefined } },
+		// The real host Context carries cordis `effect` (route registration is
+		// fiber-bound); the fake must mirror it or apply() legitimately throws.
+		effect: (callback) => { const disposer = callback(); return typeof disposer === 'function' ? disposer : () => {}; }
 	};
 	apply(ctx, { refreshMs: 60000, sessionsDir: env.sessionsDir, dataDir: env.dataDir, priceSnapshotPath: env.snapshotPath });
 	assert.ok(tool !== null && typeof tool.execute === 'function', 'usage_query tool must be registered');

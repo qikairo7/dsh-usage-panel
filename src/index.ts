@@ -139,14 +139,26 @@ export function apply(ctx: Context, config: Record<string, any> = {}) {
 		}
 	});
 
-	for (const endpoint of RPC_ENDPOINTS) {
-		ctx.connection.fetch.register({
-			path: rpcRoutePath(endpoint),
-			methods: ['POST'],
-			requestBody: 'buffered',
-			fetch: (request: Request) => rpcResponse(endpoint, request, (ep, payload) => dispatchRpc(service, ep, payload))
-		});
-	}
+	// Route registration is caller-owned and fiber-bound (provider-qoder
+	// precedent `registerQoderRpc`): the registry returns a disposer per route,
+	// and `ctx.effect` ties them to this plugin's fiber so they are removed with
+	// it. Registering bare (outside an effect) leaves the routes outside the
+	// fiber's ownership — the live host then never serves them (HTTP 404).
+	ctx.effect(() => {
+		const disposers = RPC_ENDPOINTS.map((endpoint) =>
+			ctx.connection.fetch.register({
+				path: rpcRoutePath(endpoint),
+				methods: ['POST'],
+				requestBody: 'buffered',
+				fetch: (request: Request) => rpcResponse(endpoint, request, (ep, payload) => dispatchRpc(service, ep, payload))
+			})
+		);
+		return () => {
+			for (const dispose of disposers) {
+				if (typeof dispose === 'function') (dispose as () => void)();
+			}
+		};
+	}, 'dsh-usage-panel: mount /api RPC routes');
 }
 
 /** Minimal ambient shape; the host provides the real Context at runtime. */
@@ -159,4 +171,6 @@ interface Context {
 	tools: {
 		register(definition: { name: string; description: string; parameters: Record<string, unknown>; execute: (args: unknown, exec: unknown) => Promise<unknown> }): unknown;
 	};
+	/** Cordis effect: setup runs now, the returned disposer runs on fiber teardown. */
+	effect(callback: () => void | (() => void), label?: string): unknown;
 }

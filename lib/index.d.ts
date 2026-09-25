@@ -22,5 +22,7 @@ interface Context {
             execute: (args: unknown, exec: unknown) => Promise<unknown>;
         }): unknown;
     };
+    /** Cordis effect: setup runs now, the returned disposer runs on fiber teardown. */
+    effect(callback: () => void | (() => void), label?: string): unknown;
 }
 export {};
