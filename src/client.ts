@@ -1246,6 +1246,7 @@ import type {
 /* Dark theme: driven by the runtime luminance probe (.dup-dark), which does
    not depend on any shell-specific class or attribute convention. */
 .dup-root.dup-dark {
+  --dsw-surface: #1e222a;
   --dsw-surface-primary: #1e222a;
   --dsw-surface-secondary: #242933;
   --dsw-surface-hover: #2a3038;
@@ -1259,7 +1260,8 @@ import type {
 @media (prefers-color-scheme: dark) {
   html:not([data-theme='light']):not(.light) .dup-root,
   html:not([data-theme='light']):not(.light) body .dup-root {
-    --dsw-surface-primary: #1e222a;
+    --dsw-surface: #1e222a;
+  --dsw-surface-primary: #1e222a;
     --dsw-surface-secondary: #242933;
     --dsw-surface-hover: #2a3038;
     --dsw-border-color: #363c48;
