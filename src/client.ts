@@ -149,6 +149,16 @@ import type {
 				customFrom: '开始日期',
 				customTo: '结束日期',
 				customApply: '应用',
+				heatTitle: '最近活跃度',
+				heatSub: '按最近 21 周的可见数据显示色阶。',
+				heatWeeks: '最近 21 周',
+				heatMin: '少',
+				heatMax: '多',
+				heatTip: '{date}：总消耗 Token：{tokens}，调用：{calls} 次',
+				heatWd1: '一',
+				heatWd3: '三',
+				heatWd5: '五',
+				heatMonth: '{m}月',
 				priceTitle: '价格表（快照）',
 				priceUnit: '单价 USD / 百万 Tokens，保存后立即生效',
 				priceSaved: '价格已保存并生效',
@@ -263,6 +273,16 @@ import type {
 				customFrom: 'Start date',
 				customTo: 'End date',
 				customApply: 'Apply',
+				heatTitle: 'Recent Activity',
+				heatSub: 'Color scale across the last 21 weeks of data.',
+				heatWeeks: 'Last 21 weeks',
+				heatMin: 'Less',
+				heatMax: 'More',
+				heatTip: '{date}: total tokens {tokens}, {calls} calls',
+				heatWd1: 'Mon',
+				heatWd3: 'Wed',
+				heatWd5: 'Fri',
+				heatMonth: '{m}',
 				priceTitle: 'Price Catalog (snapshot)',
 				priceUnit: 'USD per M-Token; takes effect immediately on save',
 				priceSaved: 'Prices saved and applied',
@@ -1165,388 +1185,178 @@ import type {
 			return React.createElement('span', { className: 'dup-badge dup-badge-official' }, t('badgeOfficial'));
 		}
 
-		// ─── Component: Interactive Timeseries SVG Chart ───────────────────────────
+		// ─── Component: Activity Heatmap (GitHub style, last 21 weeks) ─────────────
 
-		function TimeseriesChart(props: {
+		function HeatmapCard(props: {
 			rows: TimeseriesRow[];
-			t: (key: string) => string;
-			title: string;
-			models: string[];
-			trendModel: string;
-			onModelChange: (model: string) => void;
-			modelNames: Record<string, string>;
+			t: (key: string, vars?: Record<string, unknown>) => string;
 		}) {
-			const { rows, t, title, models, trendModel, onModelChange, modelNames } = props;
-			const [metric, setMetric] = React.useState('tokens' as 'tokens' | 'cost' | 'calls');
-			const [hoveredIdx, setHoveredIdx] = React.useState(null as number | null);
+			const { rows, t } = props;
+			const [tip, setTip] = React.useState(null as { row: TimeseriesRow; x: number; y: number } | null);
 
-			const selector = React.createElement(
-				'div',
-				{ className: 'dup-chart-model-row' },
-				React.createElement('select', {
-					className: 'dup-input',
-					value: trendModel,
-					'aria-label': t('trendModelLabel'),
-					onChange: (e: { target: { value: string } }) => onModelChange(e.target.value)
-				}, React.createElement('option', { value: '' }, t('trendModelAll')),
-					models.map((m: string) =>
-						React.createElement('option', { key: m, value: m }, modelNames[m] || m)
-					)
-				)
-			);
+			const CELL = 13;
+			const GAP = 3;
+			// Five-step blue scale, GitHub-style: 0 = empty day.
+			const LEVEL = ['#EDEFF2', '#C7E0FE', '#94C6FD', '#57A9FB', '#1F6FEB'];
 
-			if (!rows || rows.length === 0) {
-				return React.createElement('div', { className: 'dup-card dup-chart-card' },
-					React.createElement('div', { className: 'dup-card-header' },
-						React.createElement('span', { className: 'dup-card-title' }, title)
-					),
-					selector,
-					React.createElement('div', { className: 'dup-empty-desc', style: { padding: '20px 0', textAlign: 'center' } }, t('emptyList'))
-				);
-			}
+			const days = rows.slice(-147);
+			const nonZero = days.filter((r) => r.tokens > 0).map((r) => r.tokens);
+			const maxDay = nonZero.length ? Math.max(...nonZero) : 1;
+			const levelOf = (v: number): number => (v <= 0 ? 0 : Math.min(4, Math.max(1, Math.ceil((v / maxDay) * 4))));
+			const weekdayOf = (date: string): number => {
+				const d = new Date(`${date}T00:00:00`);
+				return (d.getDay() + 6) % 7; // Monday = 0 … Sunday = 6
+			};
 
-			// A bucket's token total split by what it actually was: fresh input,
-			// cache read (the hit), cache write, and generated output.
-			// Series palette lifted verbatim from cc-switch's UsageTrendChart:
-			// areas OVERLAP with gradient fills; they are not stacked.
-			const series = [
-				{ key: 'input', label: t('legendUncachedInput'), color: '#3b82f6' },
-				{ key: 'cacheRead', label: t('legendCacheRead'), color: '#a855f7' },
-				{ key: 'cacheWrite', label: t('legendCacheWrite'), color: '#f97316' },
-				{ key: 'output', label: t('legendOutput'), color: '#22c55e' }
-			] as const;
+			const offset = days.length ? weekdayOf(days[0].date) : 0;
+			const cells: (TimeseriesRow | null)[] = [
+				...Array.from({ length: offset }, () => null),
+				...days
+			];
+			while (cells.length % 7 !== 0) cells.push(null);
+			const weeks: (TimeseriesRow | null)[][] = [];
+			for (let w = 0; w < cells.length / 7; w++) weeks.push(cells.slice(w * 7, w * 7 + 7));
+			const todayKey = days.length ? days[days.length - 1].date : '';
 
-			const composed = metric === 'tokens';
-			const totals = rows.map((r: TimeseriesRow) =>
-				metric === 'tokens' ? r.tokens : metric === 'cost' ? r.cost : r.calls
-			);
-			// Unstacked areas scale the token axis to the largest single series —
-			// exactly what Recharts does for an AreaChart without stackId.
-			const seriesMax = Math.max(
-				...rows.map((r: TimeseriesRow) => Math.max(r.input, r.cacheRead, r.cacheWrite, r.output)),
-				1
-			);
-			const maxVal = composed ? seriesMax : Math.max(...totals, 1);
-
-			// Catmull-Rom → cubic bézier: Recharts' "monotone" smoothing, close
-			// enough visually at this density.
-			const smoothPath = (pts: { x: number; y: number }[]): string => {
-				if (pts.length === 0) return '';
-				if (pts.length === 1) return `M ${pts[0].x} ${pts[0].y}`;
-				let d = `M ${pts[0].x} ${pts[0].y}`;
-				for (let i = 0; i < pts.length - 1; i++) {
-					const p0 = pts[i - 1] ?? pts[i];
-					const p1 = pts[i];
-					const p2 = pts[i + 1];
-					const p3 = pts[i + 2] ?? p2;
-					const t = 0.18;
-					d += ` C ${p1.x + (p2.x - p0.x) * t} ${p1.y + (p2.y - p0.y) * t}, ${p2.x - (p3.x - p1.x) * t} ${p2.y - (p3.y - p1.y) * t}, ${p2.x} ${p2.y}`;
+			// A week column gets a month label when its first real day enters a
+			// new month.
+			const monthLabels: { col: number; label: string }[] = [];
+			let lastMonth = '';
+			weeks.forEach((week, col) => {
+				const first = week.find((c) => c !== null) as TimeseriesRow | undefined;
+				if (!first) return;
+				const m = first.date.slice(0, 7);
+				if (m !== lastMonth) {
+					monthLabels.push({ col, label: t('heatMonth', { m: Number(first.date.slice(5, 7)) }) });
+					lastMonth = m;
 				}
-				return d;
-			};
+			});
 
-			const width = 700;
-			const height = composed ? 240 : 210;
-			const padLeft = 52;
-			const padRight = 56;
-			const padTop = 10;
-			const padBottom = 26;
-			const chartW = width - padLeft - padRight;
-			const chartH = height - padTop - padBottom;
-			const baseY = padTop + chartH;
-
-			const fmtAxis = (v: number): string => {
-				if (metric === 'tokens') return formatTokens(v);
-				if (metric === 'cost') return formatCostCny(v);
-				return formatNumber(v);
-			};
-
-			const xs = rows.map((_r, i) =>
-				rows.length > 1 ? padLeft + (i / (rows.length - 1)) * chartW : padLeft + chartW / 2
-			);
-			// Bars fill the gap between neighbours so adjacent buckets read as a
-			// continuous band; a lone bucket gets a legible fixed width.
-			const span = rows.length > 1 ? (chartW / rows.length) * 0.62 : 18;
-			const yOf = (v: number): number => baseY - (v / maxVal) * chartH;
-
-			const points = rows.map((r, i) => ({
-				x: xs[i],
-				y: yOf(totals[i]),
-				row: r,
-				val: totals[i]
-			}));
-
-			let pathD = '';
-			let areaD = '';
-			if (points.length > 1 && !composed) {
-				pathD = `M ${points[0].x} ${points[0].y}`;
-				for (let i = 1; i < points.length; i++) pathD += ` L ${points[i].x} ${points[i].y}`;
-				const lastP = points[points.length - 1];
-				areaD = `${pathD} L ${lastP.x} ${baseY} L ${points[0].x} ${baseY} Z`;
-			}
-
-			const yTicks = [0, 0.5, 1].map((f) => ({ f, y: baseY - f * chartH, val: maxVal * f }));
-
-			// Show every bucket label while they fit (≤14), then thin to ~7.
-			const xLabelIdx: number[] = [];
-			const labelStep = rows.length <= 14 ? 1 : Math.ceil(rows.length / 7);
-			for (let idx = 0; idx < rows.length; idx += labelStep) xLabelIdx.push(idx);
-			if (xLabelIdx[xLabelIdx.length - 1] !== rows.length - 1) xLabelIdx.push(rows.length - 1);
-			// Hour buckets key as "YYYY-MM-DD HH:00" — show only the clock time.
-			const shortDate = (date: string): string =>
-				date.includes(' ') ? date.slice(11, 16) : date.length >= 10 ? date.slice(5) : date;
-
-			const hoveredPoint = hoveredIdx !== null && points[hoveredIdx] ? points[hoveredIdx] : null;
-
-			// Dual axis (cc-switch style): the token composition uses the left
-			// axis; cost rides a separate right-axis scale as a thin line, so
-			// both are visible at once instead of behind a metric toggle.
-			const costMax = Math.max(...rows.map((r: TimeseriesRow) => r.cost), 1e-9);
-			const costPathD =
-				metric === 'tokens' && rows.length > 1
-					? rows
-							.map((r: TimeseriesRow, i: number) => `${i === 0 ? 'M' : 'L'} ${xs[i]} ${baseY - (r.cost / costMax) * chartH}`)
-							.join(' ')
-					: '';
+			const wdLabels = [t('heatWd1'), '', t('heatWd3'), '', t('heatWd5'), '', ''];
 
 			return React.createElement(
 				'div',
-				{ className: 'dup-card dup-chart-card' },
+				{ className: 'dup-card' },
 				React.createElement(
 					'div',
-					{ className: 'dup-card-header' },
-					React.createElement('span', { className: 'dup-card-title' }, title),
-					React.createElement(
-						'div',
-						{ className: 'dup-segmented' },
-						React.createElement(
-							'button',
-							{
-								type: 'button',
-								className: 'dup-segment-btn' + (metric === 'tokens' ? ' is-active' : ''),
-								onClick: () => setMetric('tokens')
-							},
-							t('toggleTokens')
-						),
-						React.createElement(
-							'button',
-							{
-								type: 'button',
-								className: 'dup-segment-btn' + (metric === 'cost' ? ' is-active' : ''),
-								onClick: () => setMetric('cost')
-							},
-							t('toggleCost')
-						),
-						React.createElement(
-							'button',
-							{
-								type: 'button',
-								className: 'dup-segment-btn' + (metric === 'calls' ? ' is-active' : ''),
-								onClick: () => setMetric('calls')
-							},
-							t('toggleCalls')
-						)
-					)
+					{ className: 'dup-card-header', style: { justifyContent: 'space-between' } },
+					React.createElement('span', { className: 'dup-card-title' }, t('heatTitle')),
+					React.createElement('span', { className: 'dup-kpi-sub' }, t('heatWeeks'))
 				),
-				selector,
+				React.createElement('div', { className: 'dup-kpi-sub', style: { marginBottom: 10 } }, t('heatSub')),
 				React.createElement(
 					'div',
-					{ className: 'dup-chart-container' },
-					// Always rendered so the chart never shifts down when the
-					// pointer enters/leaves a data point.
+					{ style: { display: 'flex', gap: 6 } },
 					React.createElement(
 						'div',
-						{ className: 'dup-chart-tooltip' },
-						hoveredPoint
-							? composed
-								? [
-										React.createElement('div', { key: 'h', style: { fontWeight: 600, marginBottom: 4 } }, hoveredPoint.row.date),
-										...series.map((s) =>
-											React.createElement(
-												'div',
-												{ key: s.key, style: { display: 'flex', alignItems: 'center', gap: 6 } },
-												React.createElement('i', { style: { width: 6, height: 6, borderRadius: 999, background: s.color, display: 'inline-block' } }),
-												React.createElement(
-													'span',
-													null,
-													`${s.label}: ${formatTokens((hoveredPoint.row as unknown as Record<string, number>)[s.key] ?? 0)}`
-												)
-											)
-										),
-										React.createElement('div', { key: 'c', style: { marginTop: 4, color: '#F43F5E' } }, `费用: ${formatCostCny(hoveredPoint.row.cost)}`)
-								  ]
-								: [
-										React.createElement('strong', { key: 'd' }, hoveredPoint.row.date),
-										' : ',
-										metric === 'cost' ? formatCostCny(hoveredPoint.val) : formatNumber(hoveredPoint.val) + ' 次'
-								  ]
-							: ''
+						{ style: { width: 26, flex: 'none' } },
+						React.createElement(
+							'div',
+							{ style: { display: 'grid', gridTemplateRows: `repeat(7, ${CELL}px)`, gap: GAP } },
+							wdLabels.map((lbl, i) =>
+								React.createElement(
+									'div',
+									{ key: i, style: { fontSize: 9, color: '#86909C', lineHeight: `${CELL}px` } },
+									lbl
+								)
+							)
+						)
 					),
 					React.createElement(
-						'svg',
-						{ className: 'dup-chart-svg', viewBox: `0 0 ${width} ${height}` },
-						React.createElement(
-							'defs',
-							null,
-							series.map((s) =>
-								React.createElement(
-									'linearGradient',
-									{ id: `dup-grad-${s.key}`, key: s.key, x1: '0', y1: '0', x2: '0', y2: '1' },
-									React.createElement('stop', { offset: '5%', stopColor: s.color, stopOpacity: '0.2' }),
-									React.createElement('stop', { offset: '95%', stopColor: s.color, stopOpacity: '0' })
-								)
-							)
-						),
-						// Y gridlines + value labels (0 / mid / max)
-						yTicks.map((t, idx) =>
-							React.createElement(
-								'g',
-								{ key: `y${idx}` },
-								React.createElement('line', {
-									x1: padLeft,
-									y1: t.y,
-									x2: width - padRight,
-									y2: t.y,
-									stroke: 'rgba(0,0,0,0.08)',
-									strokeDasharray: '3 3',
-									strokeWidth: 1
-								}),
-								React.createElement(
-									'text',
-									{
-										x: padLeft - 6,
-										y: t.y + 3,
-										textAnchor: 'end',
-										fontSize: 9,
-										fill: '#86909C'
-									},
-									fmtAxis(t.val)
-								)
-							)
-						),
-						// Area fill
-						composed
-							? [
-									// cc-switch style: four overlapping smooth gradient areas.
-									series.map((s) => {
-									const pts = rows.map((r: TimeseriesRow, i: number) => ({
-										x: xs[i],
-										y: baseY - (((r as unknown as Record<string, number>)[s.key] ?? 0) / maxVal) * chartH
-									}));
-									const line = smoothPath(pts);
-									const area =
-										pts.length > 1 ? `${line} L ${xs[xs.length - 1]} ${baseY} L ${xs[0]} ${baseY} Z` : '';
-									return React.createElement(
-										'g',
-										{ key: s.key },
-										area ? React.createElement('path', { d: area, fill: `url(#dup-grad-${s.key})`, stroke: 'none' }) : null,
-										React.createElement('path', {
-											d: line,
-											fill: 'none',
-											stroke: s.color,
-											strokeWidth: 2,
-											strokeLinecap: 'round',
-											strokeLinejoin: 'round'
-										})
-									);
-								}),
-								// Invisible full-height hit targets: one per bucket, so hover
-								// works across the whole plot on touch/trackpads.
-								rows.map((_r: TimeseriesRow, i: number) =>
-									React.createElement('rect', {
-										key: `h${i}`,
-										x: xs[i] - span / 2,
-										y: padTop,
-										width: span,
-										height: chartH,
-										fill: 'transparent',
-										style: { cursor: 'pointer' },
-										onMouseEnter: () => setHoveredIdx(i),
-										onMouseLeave: () => setHoveredIdx(null)
-									})
-								)
-							  ]
-							: React.createElement(
-									'g',
-									null,
-									areaD && React.createElement('path', { d: areaD, fill: 'url(#dup-grad-input)' }),
-									pathD && React.createElement('path', { d: pathD, fill: 'none', stroke: '#007AFF', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' })
-								),
-						// Cost overlay on the right axis + its tick labels.
-						costPathD && React.createElement('path', { d: costPathD, fill: 'none', stroke: '#F43F5E', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round', strokeDasharray: '4 4' }),
-						metric === 'tokens' &&
-							[0, 0.5, 1].map((f, idx) =>
-								React.createElement(
-									'text',
-									{
-										key: `cr${idx}`,
-										x: width - padRight + 8,
-										y: baseY - f * chartH + 3,
-										textAnchor: 'start',
-										fontSize: 8,
-										fill: '#F43F5E'
-									},
-									formatCostCny(costMax * f)
-								)
-							),
-						// X axis date labels
-						xLabelIdx.map((idx) =>
-							React.createElement(
-								'text',
-								{
-									key: `x${idx}`,
-									x: points[idx].x,
-									y: height - 8,
-									textAnchor: idx === 0 ? 'start' : idx === rows.length - 1 ? 'end' : 'middle',
-									fontSize: 9,
-									fill: '#86909C'
-								},
-								shortDate(rows[idx].date)
-							)
-						),
-						// Points for the non-composed metrics. A single bucket has no
-						// line, so its dot is drawn larger — otherwise "today" would
-						// render an empty plot.
-						!composed &&
-							points.map((p, idx) =>
-								React.createElement('circle', {
-									key: idx,
-									cx: p.x,
-									cy: p.y,
-									r: points.length === 1 ? 4 : hoveredIdx === idx ? 4.5 : 2.5,
-									fill: points.length === 1 || hoveredIdx === idx ? '#007AFF' : '#FFFFFF',
-									stroke: '#007AFF',
-									strokeWidth: 1.8,
-									style: { cursor: 'pointer', transition: 'r 120ms ease' },
-									onMouseEnter: () => setHoveredIdx(idx),
-									onMouseLeave: () => setHoveredIdx(null)
-								})
-							)
-					)
-				),
-				// Legend for the composition series (and the hit-rate line).
-				composed &&
-					React.createElement(
 						'div',
-						{ className: 'dup-chart-legend' },
-						series.map((s) =>
-							React.createElement(
-								'span',
-								{ key: s.key, className: 'dup-legend-item' },
-								React.createElement('i', { style: { background: s.color } }),
-								s.label
-							)
+						null,
+						React.createElement(
+							'div',
+							{
+								style: {
+									display: 'grid',
+									gridAutoFlow: 'column',
+									gridAutoColumns: `${CELL}px`,
+									gap: GAP,
+									marginBottom: 2
+								}
+							},
+							weeks.map((_w, col) => {
+								const lbl = monthLabels.find((m) => m.col === col);
+								return React.createElement(
+									'div',
+									{ key: col, style: { fontSize: 9, color: '#86909C', whiteSpace: 'nowrap' } },
+									lbl ? lbl.label : ''
+								);
+							})
 						),
 						React.createElement(
-							'span',
-							{ className: 'dup-legend-item' },
-							React.createElement('i', { style: { background: '#F43F5E', height: '2px', borderRadius: 0 } }),
-							t('legendCostRight')
+							'div',
+							{
+								style: {
+									display: 'grid',
+									gridTemplateRows: `repeat(7, ${CELL}px)`,
+									gridAutoFlow: 'column',
+									gridAutoColumns: `${CELL}px`,
+									gap: GAP
+								}
+							},
+							cells.map((c, ci) => {
+								if (!c) return React.createElement('div', { key: `e${ci}` });
+								const isToday = c.date === todayKey;
+								return React.createElement('div', {
+									key: c.date,
+									title: t('heatTip', {
+										date: c.date,
+										tokens: formatTokens(c.tokens),
+										calls: formatNumber(c.calls)
+									}),
+									onMouseEnter: (e: any) => setTip({ row: c, x: e.clientX, y: e.clientY }),
+									onMouseLeave: () => setTip(null),
+									style: {
+										width: CELL,
+										height: CELL,
+										borderRadius: 3,
+										background: LEVEL[levelOf(c.tokens)],
+										boxShadow: isToday ? '0 0 0 2px #1F6FEB' : 'none'
+									}
+								});
+							})
 						)
 					)
+				),
+				React.createElement(
+					'div',
+					{ style: { display: 'flex', alignItems: 'center', gap: 4, marginTop: 10, fontSize: 10, color: '#86909C' } },
+					t('heatMin'),
+					LEVEL.map((c) =>
+						React.createElement('i', {
+							key: c,
+							style: { width: 10, height: 10, borderRadius: 2, background: c, display: 'inline-block' }
+						})
+					),
+					t('heatMax')
+				),
+				tip
+					? React.createElement(
+							'div',
+							{
+								style: {
+									position: 'fixed',
+									left: tip.x,
+									top: tip.y,
+									transform: 'translate(-50%, -120%)',
+									background: '#24292E',
+									color: '#FFFFFF',
+									borderRadius: 6,
+									padding: '6px 10px',
+									fontSize: 11,
+									lineHeight: 1.5,
+									whiteSpace: 'nowrap',
+									pointerEvents: 'none',
+									zIndex: 50
+								}
+							},
+							t('heatTip', { date: tip.row.date, tokens: formatTokens(tip.row.tokens), calls: formatNumber(tip.row.calls) })
+					  )
+					: null
 			);
 		}
-
 		// ─── Surface A: Main Sidebar Dashboard Tab ──────────────────────────────────
 
 		function UsageSidebarTab(props: { t: (key: string, vars?: Record<string, unknown>) => string; sessionId?: string }) {
@@ -1573,9 +1383,8 @@ import type {
 			const [filterSessionId, setFilterSessionId] = React.useState('');
 			const [page, setPage] = React.useState(1);
 
-			// Trend chart: which single model to plot ('' = every model).
-			const [trendModel, setTrendModel] = React.useState('');
-			// Request log: row key of the currently expanded per-call breakdown.
+			// Trend chart removed in favour of the activity heatmap below; the
+			// timeseries feed is now fetched once for the whole history.
 			const [expandedRow, setExpandedRow] = React.useState(null as string | null);
 			// Custom date range: YYYY-MM-DD inputs applied as an explicit range.
 			const [customOpen, setCustomOpen] = React.useState(false);
@@ -1677,23 +1486,6 @@ import type {
 				if (!pricing || !window.confirm(t('priceConfirmDelete'))) return;
 				void commitModels(pricing.models.filter((_drop: PricingModel, i: number) => i !== idx));
 			};
-			const trendModels = modelBreakdown.map((r: BreakdownRow) => r.key);
-			const modelNames: Record<string, string> = {};
-			for (const m of pricing?.models ?? []) {
-				if (m.displayName) modelNames[m.model] = m.displayName;
-			}
-			// Title follows the RANGE the user picked (今日/本周/本月/全部) —
-			// that is the mental model; the bucket granularity is chart detail.
-			const trendTitle =
-				range === 'today'
-					? t('trendTitleToday')
-					: range === 'week'
-						? t('trendTitleWeek')
-						: range === 'month'
-							? t('trendTitleMonth')
-							: range === 'all'
-								? t('trendTitleAll')
-								: t('trendTitleCustom');
 
 			// When this view mounts, the host's scroll container is still parked
 			// wherever the chat was (usually the bottom), so the board opens
@@ -1724,7 +1516,7 @@ import type {
 
 					Promise.all([
 						callRpc<SummaryResult>('summary', { range }),
-						callRpc<TimeseriesRow[]>('timeseries', { range, bucket: 'auto', model: trendModel || undefined }),
+						callRpc<TimeseriesRow[]>('timeseries', { range: 'all', bucket: 'day' }),
 						callRpc<BreakdownRow[]>('breakdown', { range, by: 'model' }),
 						callRpc<BreakdownRow[]>('breakdown', { range, by: 'provider' }),
 						callRpc<BreakdownRow[]>('breakdown', { range, by: 'session' }),
@@ -1748,7 +1540,7 @@ import type {
 							setLoading(false);
 						});
 				},
-				[range, filterModel, filterProvider, filterSessionId, page, trendModel]
+				[range, filterModel, filterProvider, filterSessionId, page]
 			);
 
 			// Immediate fetch on change
@@ -2049,14 +1841,9 @@ import type {
 					),
 
 				// 4. Daily Timeseries Trend Chart
-				React.createElement(TimeseriesChart, {
+				React.createElement(HeatmapCard, {
 					rows: timeseries,
-					t,
-					title: trendTitle,
-					models: trendModels,
-					trendModel,
-					onModelChange: setTrendModel,
-					modelNames
+					t
 				}),
 
 				// 5. Model + Provider tables pair side-by-side on wide screens.
