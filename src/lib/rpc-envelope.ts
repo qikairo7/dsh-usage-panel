@@ -24,6 +24,7 @@ export const RPC_ENDPOINTS = [
 	'breakdown',
 	'detail',
 	'pricing',
+	'pricing-update',
 	'refresh',
 	'ledger'
 ] as const;

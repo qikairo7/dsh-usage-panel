@@ -77,6 +77,12 @@ export interface TimeseriesRow {
 
 export type BreakdownBy = 'model' | 'provider' | 'session' | 'origin';
 
+/** Result of rewriting the price snapshot via the in-page editor. */
+export interface PricingUpdateResult {
+	ok: true;
+	count: number;
+}
+
 export interface BreakdownRow {
 	key: string;
 	tokens: number;
@@ -167,6 +173,9 @@ export interface LedgerResult {
 export interface UsageService {
 	summary(range: Range): Promise<SummaryResult>;
 	timeseries(range: Range, bucket: TimeseriesBucket, model?: string): Promise<TimeseriesRow[]>;
+	/** Validate + atomically rewrite the price snapshot's model list, then
+	 * drop the cached engine so the next query sees the new prices. */
+	updatePricing(models: unknown[]): Promise<PricingUpdateResult>;
 	breakdown(range: Range, by: BreakdownBy): Promise<BreakdownRow[]>;
 	detail(range: Range, filters: DetailFilters, page: number, pageSize: number): Promise<DetailResult>;
 	pricing(): Promise<PricingResult>;

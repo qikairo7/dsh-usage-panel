@@ -168,6 +168,34 @@ test('timeseries: bucket width follows the range; a single model can be isolated
 	assert.equal(none.length, 0);
 });
 
+test('price editor: validated atomic rewrite drops the cached engine', async () => {
+	const env = makeEnv(test);
+	const svc = serviceOf(env);
+	// Warm the engine with the shipped snapshot, then rewrite one entry.
+	const before = await svc.pricing();
+	const target = before.models[0];
+	const edited = before.models.map((m) =>
+		m.model === target.model ? { ...m, tiers: { input: 2, output: 4, cacheRead: 0.2, cacheWrite: 0.5 } } : m
+	);
+	const res = await svc.updatePricing(edited);
+	assert.equal(res.ok, true);
+	assert.equal(res.count, before.models.length);
+	// The cached engine was dropped: the next query reflects the new price.
+	const after = await svc.pricing();
+	const row = after.models.find((m) => m.model === target.model);
+	assert.deepEqual(row.tiers, { input: 2, output: 4, cacheRead: 0.2, cacheWrite: 0.5 });
+	// Invalid entries are refused loudly, with the offending field named.
+	await assert.rejects(
+		() =>
+			svc.updatePricing([
+				{ model: 'x', provider: 'p', tiers: { input: -1, output: 1, cacheRead: 0, cacheWrite: 0 }, priceMode: 'official' }
+			]),
+		/tiers\.input/
+	);
+	// The backup copy exists next to the snapshot.
+	assert.ok(readFileSync(env.snapshotPath + '.bak').length > 0);
+});
+
 test('invariant: incremental append scan == full reparse (real fixture split)', async () => {
 	const env = makeEnv(test);
 	const dir = path.join(env.sessionsDir, 'speckit', 'session-286aac50-29e8-43b5-be50-1bfbb04e3716');

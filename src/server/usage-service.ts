@@ -7,6 +7,7 @@
  * Aggregate views are computed from the call-level rows at query time —
  * "detail sum == summary" holds by construction (tested invariant).
  */
+import fs from 'node:fs';
 import path from 'node:path';
 import type {
 	BreakdownBy,
@@ -18,6 +19,7 @@ import type {
 	LedgerResult,
 	PriceMode,
 	PricingResult,
+	PricingUpdateResult,
 	Range,
 	RefreshResult,
 	SummaryResult,
@@ -270,6 +272,84 @@ export function createUsageService(options: UsageServiceOptions): UsageService {
 			return [...rows.entries()]
 				.map(([date, v]) => ({ date, ...v }))
 				.sort((a, b) => (a.date < b.date ? -1 : 1));
+		},
+
+		/**
+		 * Rewrite the price snapshot's model list for the in-page editor.
+		 * Validation at this IO boundary refuses loudly; the write is
+		 * backup-then-temp-then-rename so a failure never truncates the file;
+		 * the cached engine is dropped so the next query reads new prices.
+		 */
+		async updatePricing(models: unknown[]): Promise<PricingUpdateResult> {
+			const snapshotPath = options.priceSnapshotPath;
+			if (!snapshotPath) {
+				throw new Error('pricing-update: no priceSnapshotPath configured; the in-page editor is unavailable');
+			}
+			if (!Array.isArray(models) || models.length === 0 || models.length > 500) {
+				throw new Error(
+					`pricing-update: expected 1..500 model entries, got ${JSON.stringify(Array.isArray(models) ? models.length : typeof models)}`
+				);
+			}
+			const PRICE_MODES = new Set(['official', 'community', 'shadow', 'unpriced', 'official-alias', 'cross-verified', 'single-source']);
+			type CleanModel = {
+				model: string;
+				provider: string;
+				tiers: { input: number; output: number; cacheRead: number; cacheWrite: number };
+				priceMode: string;
+				sourceUrl: string;
+				displayName: string | null;
+			};
+			const cleaned: CleanModel[] = models.map((entry, i) => {
+				const at = `pricing-update.models[${i}]`;
+				if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
+					throw new Error(`${at}: expected an object, got ${JSON.stringify(entry)}`);
+				}
+				const e = entry as Record<string, unknown>;
+				const str = (v: unknown, name: string): string => {
+					if (typeof v !== 'string' || !v.trim()) throw new Error(`${at}.${name}: expected a non-empty string, got ${JSON.stringify(v)}`);
+					return v.trim();
+				};
+				const num = (v: unknown, name: string): number => {
+					if (typeof v !== 'number' || !Number.isFinite(v) || v < 0) {
+						throw new Error(`${at}.${name}: expected a finite number >= 0, got ${JSON.stringify(v)}`);
+					}
+					return v;
+				};
+				const tiers = (e.tiers ?? {}) as Record<string, unknown>;
+				if (typeof e.priceMode !== 'string' || !PRICE_MODES.has(e.priceMode)) {
+					throw new Error(`${at}.priceMode: expected one of ${[...PRICE_MODES].join('|')}, got ${JSON.stringify(e.priceMode)}`);
+				}
+				return {
+					model: str(e.model, 'model'),
+					provider: str(e.provider, 'provider'),
+					tiers: {
+						input: num(tiers.input, 'tiers.input'),
+						output: num(tiers.output, 'tiers.output'),
+						cacheRead: num(tiers.cacheRead, 'tiers.cacheRead'),
+						cacheWrite: num(tiers.cacheWrite, 'tiers.cacheWrite')
+					},
+					priceMode: e.priceMode,
+					sourceUrl: typeof e.sourceUrl === 'string' ? e.sourceUrl.trim() : '',
+					displayName: typeof e.displayName === 'string' && e.displayName.trim() ? e.displayName.trim() : null
+				};
+			});
+			const ids = new Set(cleaned.map((m) => m.model));
+			if (ids.size !== cleaned.length) {
+				throw new Error('pricing-update: duplicate model ids in the submitted list');
+			}
+			const raw = await fs.promises.readFile(snapshotPath, 'utf8');
+			const doc = JSON.parse(raw) as Record<string, unknown>;
+			doc.models = cleaned;
+			doc.fetchedAt = new Date().toISOString();
+			const backup = `${snapshotPath}.bak`;
+			await fs.promises.copyFile(snapshotPath, backup).catch((err: NodeJS.ErrnoException) => {
+				if (err.code !== 'ENOENT') throw err; // no previous file yet: nothing to back up
+			});
+			const tmp = `${snapshotPath}.tmp`;
+			await fs.promises.writeFile(tmp, `${JSON.stringify(doc, null, 2)}\n`, 'utf8');
+			await fs.promises.rename(tmp, snapshotPath);
+			engine = null; // next ensureEngine() reloads the rewritten snapshot
+			return { ok: true, count: cleaned.length };
 		},
 
 		async breakdown(range: Range, by: BreakdownBy): Promise<BreakdownRow[]> {

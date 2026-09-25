@@ -271,6 +271,7 @@ test('ordering: a throwing tools.register still leaves every data route mounted'
 		'/usage-panel/api/breakdown',
 		'/usage-panel/api/detail',
 		'/usage-panel/api/pricing',
+		'/usage-panel/api/pricing-update',
 		'/usage-panel/api/refresh',
 		'/usage-panel/api/ledger'
 	]);
@@ -296,5 +297,5 @@ test('webServer is obtained via ctx.inject, never ctx.get (live regression)', as
 		}
 	};
 	apply(ctx, { refreshMs: 60000, sessionsDir: env.sessionsDir, dataDir: env.dataDir, priceSnapshotPath: env.snapshotPath });
-	assert.equal(routes.length, 7, 'all seven endpoints must mount through the injected webServer');
+	assert.equal(routes.length, 8, 'all eight endpoints (incl. pricing-update) must mount through the injected webServer');
 });

@@ -149,6 +149,19 @@ import type {
 				customFrom: '开始日期',
 				customTo: '结束日期',
 				customApply: '应用',
+				priceTitle: '价格表（快照）',
+				priceUnit: '单价 USD / 百万 Tokens，保存后立即生效',
+				priceSaved: '价格已保存并生效',
+				priceSaveErr: '保存失败：{message}',
+				priceAdd: '＋ 新增模型',
+				priceConfirmDelete: '确认删除该模型的价格？删除后该模型按未定价处理。',
+				priceDisplayName: '显示名',
+				priceModeLabel: '计价',
+				priceActions: '操作',
+				priceSave: '保存',
+				priceCancel: '取消',
+				priceEdit: '编辑',
+				priceDelete: '删除',
 				rangeMonth: '本月',
 				rangeAll: '全部',
 				kpiTotalTokens: '总 Tokens',
@@ -250,6 +263,19 @@ import type {
 				customFrom: 'Start date',
 				customTo: 'End date',
 				customApply: 'Apply',
+				priceTitle: 'Price Catalog (snapshot)',
+				priceUnit: 'USD per M-Token; takes effect immediately on save',
+				priceSaved: 'Prices saved and applied',
+				priceSaveErr: 'Save failed: {message}',
+				priceAdd: '＋ Add model',
+				priceConfirmDelete: 'Delete this model price? The model will be treated as unpriced.',
+				priceDisplayName: 'Display name',
+				priceModeLabel: 'Pricing',
+				priceActions: 'Actions',
+				priceSave: 'Save',
+				priceCancel: 'Cancel',
+				priceEdit: 'Edit',
+				priceDelete: 'Delete',
 				rangeMonth: 'This Month',
 				rangeAll: 'All Time',
 				kpiTotalTokens: 'Total Tokens',
@@ -1058,6 +1084,25 @@ import type {
 .dup-root .dup-table-wrap {
   overflow-x: auto;
 }
+/* Price snapshot editor form. */
+.dup-price-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--dup-space-2) var(--dup-space-3);
+  align-items: end;
+}
+.dup-price-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--dsw-text-tertiary, #86909C);
+}
+.dup-price-field .dup-input {
+  font-size: 12px;
+  padding: 4px 8px;
+}
 `;
 
 		// ─── SVG Icons ─────────────────────────────────────────────────────────────
@@ -1514,6 +1559,91 @@ import type {
 				if (Number.isNaN(fromTs) || Number.isNaN(toTs) || fromTs > toTs) return;
 				setRange({ from: new Date(fromTs).toISOString(), to: new Date(toTs).toISOString() });
 				setPage(1);
+			};
+
+			// Price snapshot editor: which row is open and its working draft.
+			const [editIdx, setEditIdx] = React.useState(null as number | null);
+			const [draft, setDraft] = React.useState(null as any);
+			const [priceBusy, setPriceBusy] = React.useState(false);
+			const [priceMsg, setPriceMsg] = React.useState(null as string | null);
+			const toNum = (v: string): number => {
+				const n = Number(v);
+				return Number.isFinite(n) && n >= 0 ? n : 0;
+			};
+			const field = (label: string, key: string, type: string) =>
+				React.createElement(
+					'label',
+					{ className: 'dup-price-field' },
+					React.createElement('span', null, label),
+					React.createElement('input', {
+						type,
+						className: 'dup-input',
+						value: String(draft[key] ?? ''),
+						onChange: (e: any) =>
+							setDraft((d: any) => ({ ...d, [key]: type === 'number' ? toNum(e.target.value) : e.target.value }))
+					})
+				);
+			const startEdit = (idx: number, m: PricingModel) => {
+				setEditIdx(idx);
+				setDraft({
+					model: m.model,
+					provider: m.provider,
+					input: m.tiers?.input ?? 0,
+					output: m.tiers?.output ?? 0,
+					cacheRead: m.tiers?.cacheRead ?? 0,
+					cacheWrite: m.tiers?.cacheWrite ?? 0,
+					priceMode: m.priceMode,
+					sourceUrl: m.sourceUrl || '',
+					displayName: m.displayName
+				});
+			};
+			const commitModels = async (models: any[]) => {
+				setPriceBusy(true);
+				try {
+					await callRpc('pricing-update', { models });
+					setEditIdx(null);
+					setDraft(null);
+					setPriceMsg(t('priceSaved'));
+					loadAllData(true);
+				} catch (err: any) {
+					setPriceMsg(t('priceSaveErr', { message: err?.message || String(err) }));
+				} finally {
+					setPriceBusy(false);
+				}
+			};
+			const saveEdit = () => {
+				if (editIdx === null || !draft || !pricing) return;
+				const next = pricing.models.map((m: PricingModel, i: number) =>
+					i === editIdx
+						? {
+								model: draft.model,
+								provider: draft.provider,
+								tiers: { input: draft.input, output: draft.output, cacheRead: draft.cacheRead, cacheWrite: draft.cacheWrite },
+								priceMode: draft.priceMode,
+								sourceUrl: draft.sourceUrl,
+								displayName: draft.displayName
+						  }
+						: m
+				);
+				void commitModels(next);
+			};
+			const addModel = () => {
+				if (!pricing) return;
+				void commitModels([
+					...pricing.models,
+					{
+						model: 'new-model',
+						provider: 'unknown',
+						tiers: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+						priceMode: 'unpriced',
+						sourceUrl: '',
+						displayName: null
+					}
+				]);
+			};
+			const removeModel = (idx: number) => {
+				if (!pricing || !window.confirm(t('priceConfirmDelete'))) return;
+				void commitModels(pricing.models.filter((_drop: PricingModel, i: number) => i !== idx));
 			};
 			const trendModels = modelBreakdown.map((r: BreakdownRow) => r.key);
 			const modelNames: Record<string, string> = {};
@@ -2083,6 +2213,151 @@ import type {
 									)
 								)
 						  )
+				),
+
+				// 6c. Price snapshot editor: per-row edit, validated atomic rewrite,
+				// engine hot-reload — the board reflects new prices immediately.
+				React.createElement(
+					'div',
+					{ className: 'dup-card' },
+					React.createElement(
+						'div',
+						{ className: 'dup-card-header' },
+						React.createElement('span', { className: 'dup-card-title' }, t('priceTitle')),
+						React.createElement('span', { className: 'dup-kpi-sub' }, t('priceUnit'))
+					),
+					priceMsg && React.createElement('div', { className: 'dup-empty-desc' }, priceMsg),
+					!pricing
+						? React.createElement('div', { className: 'dup-empty-desc', style: { padding: '16px 0', textAlign: 'center' } }, t('emptyList'))
+						: React.createElement(
+								'div',
+								{ className: 'dup-table-wrap' },
+								React.createElement(
+									'table',
+									{ className: 'dup-table' },
+									React.createElement(
+										'thead',
+										null,
+										React.createElement(
+											'tr',
+											null,
+											React.createElement('th', null, t('colModel')),
+											React.createElement('th', null, t('colProvider')),
+											React.createElement('th', null, t('legendUncachedInput')),
+											React.createElement('th', null, t('legendOutput')),
+											React.createElement('th', null, t('legendCacheRead')),
+											React.createElement('th', null, t('legendCacheWrite')),
+											React.createElement('th', null, t('priceModeLabel')),
+											React.createElement('th', null, t('priceActions'))
+										)
+									),
+									React.createElement(
+										'tbody',
+										null,
+										pricing.models.map((m: PricingModel, i: number) =>
+											editIdx === i && draft
+												? React.createElement(
+														'tr',
+														{ key: 'edit-' + i },
+														React.createElement(
+															'td',
+															{ colSpan: 8 },
+															React.createElement(
+																'div',
+																{ className: 'dup-price-form' },
+																field(t('colModel'), 'model', 'text'),
+																field(t('colProvider'), 'provider', 'text'),
+																field(t('legendUncachedInput'), 'input', 'number'),
+																field(t('legendOutput'), 'output', 'number'),
+																field(t('legendCacheRead'), 'cacheRead', 'number'),
+																field(t('legendCacheWrite'), 'cacheWrite', 'number'),
+																React.createElement(
+																	'label',
+																	{ className: 'dup-price-field' },
+																	React.createElement('span', null, t('priceModeLabel')),
+																	React.createElement(
+																		'select',
+																		{
+																			className: 'dup-input',
+																			value: draft.priceMode,
+																			onChange: (e: any) => setDraft((d: any) => ({ ...d, priceMode: e.target.value }))
+																		},
+																		['official', 'unpriced', 'official-alias', 'cross-verified', 'single-source', 'community', 'shadow'].map((mode: string) =>
+																			React.createElement('option', { key: mode, value: mode }, mode)
+																		)
+																	)
+																),
+																React.createElement(
+																	'div',
+																	{ style: { display: 'flex', gap: '6px', alignItems: 'flex-end' } },
+																	React.createElement(
+																		'button',
+																		{ type: 'button', className: 'dup-btn', disabled: priceBusy, onClick: saveEdit },
+																		t('priceSave')
+																	),
+																	React.createElement(
+																		'button',
+																		{
+																			type: 'button',
+																			className: 'dup-btn',
+																			onClick: () => {
+																				setEditIdx(null);
+																				setDraft(null);
+																			}
+																		},
+																		t('priceCancel')
+																	)
+																)
+															)
+														)
+												  )
+												: React.createElement(
+														'tr',
+														{ key: m.model },
+														React.createElement(
+															'td',
+															null,
+															React.createElement('div', { style: { fontWeight: 600 } }, m.displayName || m.model),
+															m.displayName
+																? React.createElement(
+																		'div',
+																		{ style: { fontSize: '11px', color: 'var(--dsw-text-tertiary, #86909C)', fontFamily: 'monospace' } },
+																		m.model
+																  )
+																: null
+														),
+														React.createElement('td', null, m.provider),
+														React.createElement('td', null, String(m.tiers?.input ?? 0)),
+														React.createElement('td', null, String(m.tiers?.output ?? 0)),
+														React.createElement('td', null, String(m.tiers?.cacheRead ?? 0)),
+														React.createElement('td', null, String(m.tiers?.cacheWrite ?? 0)),
+														React.createElement('td', null, m.priceMode),
+														React.createElement(
+															'td',
+															null,
+															React.createElement('button', { type: 'button', className: 'dup-btn', onClick: () => startEdit(i, m) }, t('priceEdit')),
+															React.createElement(
+																'button',
+																{
+																	type: 'button',
+																	className: 'dup-btn',
+																	style: { marginLeft: '4px' },
+																	disabled: priceBusy,
+																	onClick: () => removeModel(i)
+																},
+																t('priceDelete')
+															)
+														)
+												  )
+										)
+									)
+								)
+						  ),
+					React.createElement(
+						'div',
+						{ style: { marginTop: '8px' } },
+						React.createElement('button', { type: 'button', className: 'dup-btn', disabled: priceBusy, onClick: addModel }, t('priceAdd'))
+					)
 				),
 
 				// 7. Call-level Audit Detail Table (Paginated + Filtered)
