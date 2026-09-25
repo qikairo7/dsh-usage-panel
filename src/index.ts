@@ -32,7 +32,7 @@
 import os from 'node:os';
 import path from 'node:path';
 import z from './vendor/schemastery.mjs';
-import { RPC_ENDPOINTS, rpcResponse, rpcRoutePath } from './lib/rpc-envelope.js';
+import { RPC_ENDPOINTS, createRpcRoute } from './lib/rpc-envelope.js';
 import { dispatchRpc } from './server/rpc.js';
 import { createUsageService } from './server/usage-service.js';
 
@@ -42,7 +42,13 @@ export const name = 'usage-panel';
 // `ctx.tools.register(definition)` (returns a disposer); ToolDefinition =
 // { name, description, parameters (JSON Schema), execute(args, exec) } per
 // @deepseek-ai/dsh-tools lib/types.
-export const inject = ['connection', 'tools'];
+//
+// The HTTP carrier is injected separately below via ctx.inject(['webServer'])
+// — the shipped-plugin pattern (LaoYueHanNi/dsh-token-usage, y2zyyr/
+// dsh-token-usage-sidebar). Declaring it in `inject` would make the whole
+// plugin fail on profiles without a web server (headless runs), so it stays a
+// soft dependency: the browser half simply gets no route there.
+export const inject = ['tools'];
 
 /** Default sessions root: $DSH_HOME/sessions (harness sets DSH_HOME). */
 function defaultSessionsDir(): string {
@@ -139,38 +145,37 @@ export function apply(ctx: Context, config: Record<string, any> = {}) {
 		}
 	});
 
-	// Route registration is caller-owned and fiber-bound (provider-qoder
-	// precedent `registerQoderRpc`): the registry returns a disposer per route,
-	// and `ctx.effect` ties them to this plugin's fiber so they are removed with
-	// it. Registering bare (outside an effect) leaves the routes outside the
-	// fiber's ownership — the live host then never serves them (HTTP 404).
-	ctx.effect(() => {
-		const disposers = RPC_ENDPOINTS.map((endpoint) =>
-			ctx.connection.fetch.register({
-				path: rpcRoutePath(endpoint),
-				methods: ['POST'],
-				requestBody: 'buffered',
-				fetch: (request: Request) => rpcResponse(endpoint, request, (ep, payload) => dispatchRpc(service, ep, payload))
-			})
-		);
-		return () => {
-			for (const dispose of disposers) {
-				if (typeof dispose === 'function') (dispose as () => void)();
-			}
-		};
-	}, 'dsh-usage-panel: mount /api RPC routes');
+	// Mount the browser half's endpoints on the web server's own route table —
+	// the shipped-plugin pattern (LaoYueHanNi/dsh-token-usage
+	// `ctx.inject(['webServer'], webCtx => webCtx.effect(() => webCtx
+	// .webServer.register(route)))`; y2zyyr/dsh-token-usage-sidebar identical).
+	//
+	// `inject` here (not the top-level export) keeps the web server a SOFT
+	// dependency: profiles without one (headless runs) still get the logging
+	// plugin and the usage_query tool, they just never mount the routes.
+	// Registering bare — outside an effect — leaves the routes unowned and the
+	// live host never serves them.
+	ctx.inject(['webServer'], (webCtx: any) => {
+		const webServer = webCtx?.webServer;
+		if (webServer === null || webServer === undefined || typeof webServer.register !== 'function') {
+			throw new Error('usage-panel: injected webServer exposes no register() — the browser half would 404 on every request');
+		}
+		for (const endpoint of RPC_ENDPOINTS) {
+			webCtx.effect(
+				() => webServer.register(createRpcRoute(endpoint, (ep: string, payload: unknown) => dispatchRpc(service, ep, payload))),
+				`dsh-usage-panel: ${endpoint} route`
+			);
+		}
+	});
 }
 
 /** Minimal ambient shape; the host provides the real Context at runtime. */
 interface Context {
-	connection: {
-		fetch: {
-			register(route: { path: string; methods: string[]; requestBody: string; fetch: (request: Request) => Promise<Response> }): unknown;
-		};
-	};
 	tools: {
 		register(definition: { name: string; description: string; parameters: Record<string, unknown>; execute: (args: unknown, exec: unknown) => Promise<unknown> }): unknown;
 	};
 	/** Cordis effect: setup runs now, the returned disposer runs on fiber teardown. */
 	effect(callback: () => void | (() => void), label?: string): unknown;
+	/** Cordis injection: runs the callback once the named services exist. */
+	inject(services: string[], callback: (ctx: any) => void): unknown;
 }

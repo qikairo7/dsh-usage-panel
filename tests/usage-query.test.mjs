@@ -48,10 +48,13 @@ function captureTool(env) {
 	let tool = null;
 	const ctx = {
 		tools: { register: (definition) => { tool = definition; } },
-		connection: { fetch: { register: () => undefined } },
-		// The real host Context carries cordis `effect` (route registration is
-		// fiber-bound); the fake must mirror it or apply() legitimately throws.
-		effect: (callback) => { const disposer = callback(); return typeof disposer === 'function' ? disposer : () => {}; }
+		// The host Context carries cordis `effect` and `inject`; the fake mirrors
+		// both so apply() can mount its web routes the way shipped plugins do.
+		effect: (callback) => { const disposer = callback(); return typeof disposer === 'function' ? disposer : () => {}; },
+		inject: (services, callback) => {
+			assert.ok(Array.isArray(services), 'inject takes a service array');
+			if (services.includes('webServer')) callback({ webServer: { register: () => () => {} }, effect: ctx.effect });
+		}
 	};
 	apply(ctx, { refreshMs: 60000, sessionsDir: env.sessionsDir, dataDir: env.dataDir, priceSnapshotPath: env.snapshotPath });
 	assert.ok(tool !== null && typeof tool.execute === 'function', 'usage_query tool must be registered');

@@ -61,21 +61,27 @@ import type {
 		const USD_TO_CNY = 7.23;
 
 	// ─── RPC Helper ─────────────────────────────────────────────────────────────
-	// Rides the Connection client's generic-RPC caller over the authenticated
-	// /api channel — the same three-argument convention the quota-panel client
-	// uses (channel, method, payload). A raw fetch to /api/<method> is NOT a
-	// plain HTTP route (404 there); the connection service owns the framing.
-	let runtimeCtx: any = null;
+	// Plain same-origin HTTP against the host half's own web-server routes —
+	// the shipped-plugin pattern (y2zyyr/dsh-token-usage-sidebar
+	// `fetch('/token-usage/api/summary')`; LaoYueHanNi/dsh-token-usage
+	// `fetch('/token-usage/stats')`). No Connection channel is involved: the
+	// earlier `connection.rpc.call('/api', …)` design answered HTTP 404 on this
+	// host because no shipped plugin mounts that way.
+	const RPC_BASE = '/usage-panel/api';
 
 	function callRpc<T>(endpoint: string, payload: unknown = {}): Promise<T> {
-		const rpc = runtimeCtx?.connection?.rpc;
-		if (rpc === null || rpc === undefined || typeof rpc.call !== 'function') {
-			return Promise.reject(new Error('RPC transport unavailable: connection.rpc.call missing (host connection service not injected)'));
-		}
-		return rpc.call('/api', `dsh-usage-panel/${endpoint}`, payload).then((result: any) => {
+		return fetch(`${RPC_BASE}/${endpoint}`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
+			body: JSON.stringify(payload ?? {})
+		}).then(async (res) => {
+			if (!res.ok) {
+				throw new Error(`RPC transport error HTTP ${res.status} (${res.statusText})`);
+			}
+			const result = (await res.json()) as Record<string, unknown> | null;
 			if (result && typeof result === 'object' && 'ok' in result && result.ok === false) {
-				const err = result.error || {};
-				throw new Error(`[${err.code || 'endpoint-error'}] ${err.message || 'Unknown RPC error'}`);
+				const err = (result.error ?? {}) as { code?: string; message?: string };
+				throw new Error(`[${err.code ?? 'endpoint-error'}] ${err.message ?? 'Unknown RPC error'}`);
 			}
 			return result as T;
 		});
@@ -1727,12 +1733,9 @@ import type {
 
 		// ─── Cordis Client Lifecycle Entry ─────────────────────────────────────────
 
-		const inject = ['slots', 'timer', 'connection', 'locale', 'sidebarRightTabs', 'sidebarRight'];
+		const inject = ['slots', 'timer', 'locale', 'sidebarRightTabs', 'sidebarRight'];
 
 		function apply(ctx: any) {
-			// Capture the runtime context for callRpc: connection.rpc.call lives
-			// on the injected ctx (fork precedent `runtimeCtx = ctx`).
-			runtimeCtx = ctx;
 			// 1. Inject Stylesheet
 			ctx.effect(() => {
 				const tag = document.createElement('style');
